@@ -1,0 +1,23 @@
+name = "uscw-api"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+# Where the GitHub Pages site lives (no trailing slash). Used in confirmation / reset links.
+SITE_URL = "https://YOUR-GITHUB-USERNAME.github.io/uscw"
+# Origins allowed to call this API (comma-separated). An origin has no path.
+ALLOWED_ORIGINS = "https://YOUR-GITHUB-USERNAME.github.io,http://localhost:8080"
+# The sender address, verified in Brevo (see README section 3)
+SENDER_EMAIL = "YOUR-USCW-ACCOUNT@gmail.com"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "uscw"
+database_id = "REPLACE-WITH-ID-FROM-wrangler-d1-create"
+
+# Daily cleanup of expired sessions and tokens
+[triggers]
+crons = ["17 5 * * *"]
+
+# Secrets (set with `npx wrangler secret put NAME`, never commit them):
+#   BREVO_API_KEY
