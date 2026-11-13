@@ -229,3 +229,14 @@ textarea{min-height:90px;resize:vertical}
 .mini .tile-name{font-size:21px;text-shadow:0 1px 0 rgba(0,0,0,.4)}
 .mini .tile-champ{font-size:11px;top:6px;left:6px;padding:1px 6px}
 @media(max-width:600px){.tile.mini{width:104px}.mini .tile-txt{padding:6px 6px 8px}.mini .tile-name{font-size:16px}.mh{gap:8px}.mh-vs{font-size:24px}}
+
+/* ----- live-show match entrance ----- */
+.mh.anim .tile.mini{opacity:0;animation:cardSlamL calc(.6s*var(--k,1)) cubic-bezier(.2,.9,.3,1.15) both}
+.mh.anim .from-r .tile.mini{animation-name:cardSlamR}
+.mh.anim .from-b .tile.mini{animation-name:cardSlamB}
+.mh.anim .mh-vs{opacity:0;animation:vsDrop calc(.55s*var(--k,1)) cubic-bezier(.2,.9,.3,1.2) both}
+.w-late{opacity:0;animation:fadein calc(.6s*var(--k,1)) ease-out both}
+@keyframes cardSlamL{0%{opacity:0;transform:translateX(-120px) scale(1.4) rotate(-4deg)}55%{opacity:1;transform:translateX(6px) scale(.96) rotate(0)}78%{transform:scale(1.04)}100%{opacity:1;transform:none}}
+@keyframes cardSlamR{0%{opacity:0;transform:translateX(120px) scale(1.4) rotate(4deg)}55%{opacity:1;transform:translateX(-6px) scale(.96) rotate(0)}78%{transform:scale(1.04)}100%{opacity:1;transform:none}}
+@keyframes cardSlamB{0%{opacity:0;transform:translateY(90px) scale(1.4)}55%{opacity:1;transform:translateY(-5px) scale(.96)}78%{transform:scale(1.04)}100%{opacity:1;transform:none}}
+@keyframes vsDrop{0%{opacity:0;transform:scale(3.2);text-shadow:0 0 0 rgba(200,16,46,0)}55%{opacity:1;transform:scale(.88);text-shadow:0 0 22px rgba(200,16,46,.9)}100%{opacity:1;transform:none;text-shadow:0 0 10px rgba(200,16,46,.35)}}
