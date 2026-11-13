@@ -393,7 +393,8 @@ async function wrestlerRoutes(request, env, id) {
   if (method === 'DELETE') {
     if (!user.isAdmin) throw new HttpError(403, 'Only the CEO can release a wrestler.');
     const { results: titles } = await env.DB.prepare('SELECT id, holders FROM championships').all();
-    const stmts = [env.DB.prepare('DELETE FROM wrestlers WHERE id = ?').bind(id)];
+    await ensureStory(env); await ensureSubs(env);
+    const stmts = [env.DB.prepare('DELETE FROM wrestlers WHERE id = ?').bind(id), env.DB.prepare('DELETE FROM wrestler_story WHERE id = ?').bind(id), env.DB.prepare('DELETE FROM submissions WHERE wrestler_id = ?').bind(id)];
     for (const t of titles) {
       if (JSON.parse(t.holders || '[]').includes(id))   // a released champion leaves the title vacant
         stmts.push(env.DB.prepare("UPDATE championships SET holders = '[]', since = '', won_at = '', updated_at = ? WHERE id = ?").bind(Date.now(), t.id));
@@ -404,14 +405,66 @@ async function wrestlerRoutes(request, env, id) {
   throw new HttpError(405, 'Method not allowed');
 }
 
+/* ---------------- storylines (CEO only) ---------------- */
+// Recent results, feuds and show notes per wrestler. Only the CEO can read or change these; the intro writer uses them.
+// Upcoming matches are not stored here: the front end derives them from the published cards.
+let storyReady = null;
+function ensureStory(env) {
+  if (!storyReady) {
+    storyReady = env.DB.prepare('CREATE TABLE IF NOT EXISTS wrestler_story (id TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at INTEGER NOT NULL)')
+      .run().catch(e => { storyReady = null; throw e; });
+  }
+  return storyReady;
+}
+const RESULTS = ['Win', 'Loss', 'Draw', 'No Contest'];
+const isoDate = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+const list = (v, n) => (Array.isArray(v) ? v : []).slice(0, n).map(x => (x && typeof x === 'object' ? x : {}));
+const sid = x => (typeof x.id === 'string' && ID_RE.test(x.id) ? x.id : randHex(6));
+function cleanStory(b) {
+  return {
+    results: list(b.results, 40).map(x => ({
+      id: sid(x), date: isoDate(x.date), show: str(x.show, 100), opponent: str(x.opponent, 100),
+      result: RESULTS.includes(x.result) ? x.result : 'Win', how: str(x.how, 200)
+    })).filter(x => x.opponent),
+    feuds: list(b.feuds, 20).map(x => ({
+      id: sid(x), with: str(x.with, 100), reason: str(x.reason, 300)
+    })).filter(x => x.with),
+    notes: list(b.notes, 60).map(x => ({
+      id: sid(x), date: isoDate(x.date), show: str(x.show, 100), text: str(x.text, 600)
+    })).filter(x => x.text)
+  };
+}
+async function storyRoutes(request, env, id) {
+  const user = await getUser(request, env, true);
+  if (!user.isAdmin) throw new HttpError(403, 'Storylines are for the CEO only.');
+  await ensureStory(env);
+  if (request.method === 'GET' && !id) {
+    const { results } = await env.DB.prepare('SELECT id, data FROM wrestler_story').all();
+    const stories = {};
+    for (const r of results) { try { stories[r.id] = JSON.parse(r.data); } catch (_) { /* skip bad row */ } }
+    return json({ stories });
+  }
+  if (request.method === 'PUT' && id) {
+    const w = await env.DB.prepare('SELECT id FROM wrestlers WHERE id = ?').bind(id).first();
+    if (!w) throw new HttpError(404, 'Wrestler not found');
+    const data = cleanStory(await readJson(request, 100 * 1024));
+    await env.DB.prepare(
+      `INSERT INTO wrestler_story (id, data, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`)
+      .bind(id, JSON.stringify(data), Date.now()).run();
+    return json({ ok: true, id });
+  }
+  throw new HttpError(405, 'Method not allowed');
+}
+
 /* ---------------- events ---------------- */
-const SEG_TYPES = ['match', 'promo', 'backstage', 'angle', 'ceremony', 'other'];
+const SEG_TYPES = ['show_intro', 'match', 'promo', 'backstage', 'angle', 'ceremony', 'other'];
 // Sound cues the show script may trigger (the audio files themselves are added later).
-const CUE_RE = /^(bell|crowd_pop|crowd_boo|crowd_chant|mat_slam|pin_count|chair_shot|entrance:[A-Za-z0-9_-]{1,40})$/;
+const CUE_RE = /^(intro_music|bell|crowd_pop|crowd_boo|crowd_chant|mat_slam|pin_count|chair_shot|entrance:[A-Za-z0-9_-]{1,40})$/;
 const MAX_BEATS = 120, MAX_BEAT_CHARS = 1200, MAX_SCRIPT_CHARS = 150000;
 const cleanLength = (v, type) => {
   const n = Math.round(Number(v));
-  return Number.isFinite(n) && n >= 1 ? Math.min(30, n) : (type === 'match' ? 6 : 3);
+  return Number.isFinite(n) && n >= 1 ? Math.min(30, n) : (type === 'match' ? 6 : type === 'show_intro' ? 4 : 3);
 };
 const cleanBeats = beats => (Array.isArray(beats) ? beats : []).slice(0, MAX_BEATS).map(b => {
   b = b && typeof b === 'object' ? b : {};
@@ -439,9 +492,20 @@ function cleanEvent(b) {
       type: SEG_TYPES.includes(s.type) ? s.type : 'other',
       title: str(s.title, 100), stip: str(s.stip, 100), desc: str(s.desc, 2000), sides,
       length: cleanLength(s.length, SEG_TYPES.includes(s.type) ? s.type : 'other'),
-      beats: cleanBeats(s.beats)
+      beats: cleanBeats(s.beats),
+      sub: typeof s.sub === 'string' && ID_RE.test(s.sub) ? s.sub : '',
+      result: (SEG_TYPES.includes(s.type) && s.type === 'match' && s.result && typeof s.result === 'object')
+        ? { winner: Number.isInteger(s.result.winner) && s.result.winner >= -1 && s.result.winner < sides.length ? s.result.winner : null, finish: str(s.result.finish, 300) }
+        : null
     };
   });
+  // Only one Show Intro per show, and it always opens the show.
+  const ix = segments.findIndex(s => s.type === 'show_intro');
+  if (ix >= 0) {
+    const intro = segments[ix];
+    for (let i = segments.length - 1; i >= 0; i--) if (segments[i].type === 'show_intro') segments.splice(i, 1);
+    segments.unshift(intro);
+  }
   if (segments.reduce((n, s) => n + s.beats.reduce((m, b) => m + b.text.length, 0), 0) > MAX_SCRIPT_CHARS)
     throw new HttpError(400, 'That show script is too long. Shorten some segments.');
   return {
@@ -457,7 +521,7 @@ const eventOut = (r, admin) => {
   if (!admin) {
     // The script text is never sent to the public here; it is released a little at a time while a viewer watches the show.
     e.segments = (e.segments || []).filter(s => s.type === 'match')
-      .map(({ beats, ...s }) => ({ ...s, scripted: Array.isArray(beats) && beats.length > 0 }));
+      .map(({ beats, result, sub, ...s }) => ({ ...s, scripted: Array.isArray(beats) && beats.length > 0 }));
   }
   return e;
 };
@@ -589,6 +653,12 @@ async function eventRoutes(request, env, id, sub) {
        ON CONFLICT(id) DO UPDATE SET title = excluded.title, date = excluded.date, published = excluded.published,
          data = excluded.data, updated_at = excluded.updated_at`)
       .bind(id, data.title, data.date, data.published ? 1 : 0, JSON.stringify(data), Date.now()).run();
+    // Player submissions the CEO added to this card become "used".
+    const used = [...new Set(data.segments.map(s => s.sub).filter(Boolean))];
+    if (used.length) {
+      await ensureSubs(env);
+      await env.DB.batch(used.map(x => env.DB.prepare("UPDATE submissions SET status = 'used', used_event = ?, seen = 1, updated_at = ? WHERE id = ? AND status IN ('pending', 'approved')").bind(id, Date.now(), x)));
+    }
     return json({ ok: true, id });
   }
   if (method === 'DELETE') {
@@ -598,7 +668,318 @@ async function eventRoutes(request, env, id, sub) {
   throw new HttpError(405, 'Method not allowed');
 }
 
+/* ---------------- Superstar Hub: player segment submissions ---------------- */
+// A player sends ideas or finished text for their wrestler; only that player and the CEO ever see them. The CEO approves,
+// declines, replies, and adds approved ones to a card (which marks them used when the show is saved).
+let subsReady = null;
+function ensureSubs(env) {
+  if (!subsReady) {
+    subsReady = env.DB.batch([
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS submissions (
+        id TEXT PRIMARY KEY, wrestler_id TEXT NOT NULL, type TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'idea',
+        body TEXT NOT NULL, involved TEXT NOT NULL DEFAULT '[]', event_id TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
+        seen INTEGER NOT NULL DEFAULT 0, ceo_note TEXT NOT NULL DEFAULT '', used_event TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_submissions_wrestler ON submissions(wrestler_id, created_at)')
+    ]).catch(e => { subsReady = null; throw e; });
+  }
+  return subsReady;
+}
+const SUB_TYPES = ['promo', 'backstage', 'angle', 'other'];
+const SUB_STATUS = ['pending', 'approved', 'declined', 'used'];
+const MAX_OPEN_SUBS = 3, MAX_SUB_BODY = 4000;
+const subOut = r => ({
+  id: r.id, wrestlerId: r.wrestler_id, type: r.type, title: r.title, mode: r.mode, body: r.body,
+  involved: JSON.parse(r.involved || '[]'), eventId: r.event_id, status: r.status, seen: !!r.seen,
+  note: r.ceo_note, usedEvent: r.used_event, createdAt: r.created_at, updatedAt: r.updated_at
+});
+function cleanSub(b) {
+  const type = SUB_TYPES.includes(b.type) ? b.type : null;
+  if (!type) throw new HttpError(400, 'Pick what kind of segment this is.');
+  const body = str(b.body, MAX_SUB_BODY);
+  if (!body) throw new HttpError(400, 'Write your idea or text first.');
+  return {
+    type, body, title: str(b.title, 100), mode: b.mode === 'text' ? 'text' : 'idea',
+    involved: [...new Set((Array.isArray(b.involved) ? b.involved : []).filter(w => typeof w === 'string' && ID_RE.test(w)))].slice(0, 6),
+    eventId: typeof b.eventId === 'string' && ID_RE.test(b.eventId) ? b.eventId : ''
+  };
+}
+async function submissionRoutes(request, env, id) {
+  const user = await getUser(request, env, true);
+  await ensureSubs(env);
+  const method = request.method;
+  if (method === 'GET' && !id) {
+    const q = user.isAdmin
+      ? env.DB.prepare('SELECT * FROM submissions ORDER BY created_at DESC LIMIT 300')
+      : env.DB.prepare('SELECT * FROM submissions WHERE wrestler_id = ? ORDER BY created_at DESC LIMIT 100').bind(user.id);
+    const { results } = await q.all();
+    return json({ submissions: results.map(subOut) });
+  }
+  if (method === 'POST' && id === 'seen') {
+    if (!user.isAdmin) throw new HttpError(403, 'Only the CEO can do that.');
+    const b = await readJson(request);
+    const ids = (Array.isArray(b.ids) ? b.ids : []).filter(x => typeof x === 'string' && ID_RE.test(x)).slice(0, 100);
+    if (ids.length) await env.DB.batch(ids.map(x => env.DB.prepare('UPDATE submissions SET seen = 1 WHERE id = ?').bind(x)));
+    return json({ ok: true });
+  }
+  if (method === 'POST' && !id) {
+    const w = await env.DB.prepare('SELECT id FROM wrestlers WHERE id = ?').bind(user.id).first();
+    if (!w) throw new HttpError(400, 'Create your wrestler first.');
+    const d = cleanSub(await readJson(request));
+    const open = await env.DB.prepare("SELECT COUNT(*) AS n FROM submissions WHERE wrestler_id = ? AND status = 'pending'").bind(user.id).first();
+    if (open && open.n >= MAX_OPEN_SUBS)
+      throw new HttpError(409, `You already have ${MAX_OPEN_SUBS} submissions waiting. Wait for the CEO to respond, or withdraw one.`);
+    const now = Date.now(), nid = randHex(8);
+    await env.DB.prepare(
+      `INSERT INTO submissions (id, wrestler_id, type, title, mode, body, involved, event_id, status, seen, ceo_note, used_event, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, '', '', ?, ?)`)
+      .bind(nid, user.id, d.type, d.title, d.mode, d.body, JSON.stringify(d.involved), d.eventId, now, now).run();
+    return json({ ok: true, id: nid });
+  }
+  if (!id) throw new HttpError(404, 'Not found');
+  const row = await env.DB.prepare('SELECT * FROM submissions WHERE id = ?').bind(id).first();
+  if (!row || (!user.isAdmin && row.wrestler_id !== user.id)) throw new HttpError(404, 'Submission not found');
+  if (method === 'PUT') {
+    const b = await readJson(request);
+    const now = Date.now();
+    if (user.isAdmin) {
+      const status = SUB_STATUS.includes(b.status) ? b.status : row.status;
+      const note = typeof b.note === 'string' ? str(b.note, 1000) : row.ceo_note;
+      await env.DB.prepare('UPDATE submissions SET status = ?, ceo_note = ?, seen = 1, updated_at = ? WHERE id = ?').bind(status, note, now, id).run();
+      return json({ ok: true, id });
+    }
+    if (row.status !== 'pending') throw new HttpError(409, 'The CEO has already responded to this one, so it can no longer be edited.');
+    const d = cleanSub(b);
+    await env.DB.prepare(
+      'UPDATE submissions SET type = ?, title = ?, mode = ?, body = ?, involved = ?, event_id = ?, seen = 0, updated_at = ? WHERE id = ?')
+      .bind(d.type, d.title, d.mode, d.body, JSON.stringify(d.involved), d.eventId, now, id).run();
+    return json({ ok: true, id });
+  }
+  if (method === 'DELETE') {
+    if (!user.isAdmin && row.status !== 'pending') throw new HttpError(409, 'The CEO has already responded to this one.');
+    await env.DB.prepare('DELETE FROM submissions WHERE id = ?').bind(id).run();
+    return json({ ok: true });
+  }
+  throw new HttpError(405, 'Method not allowed');
+}
+
+/* ---------------- AI writer (Google Gemini) ---------------- */
+
+// The CEO's "Draft with AI" buttons call this. The key lives in the Worker secret GEMINI_API_KEY and never reaches the browser.
+// Only ring names, styles, moves, bios, storyline facts and card details are sent to Google; never real names or accounts.
+// Model ids are kept here so a changed name is a one-line fix (or set GEMINI_MODEL_MAIN / GEMINI_MODEL_LITE as variables).
+const GEMINI_MODEL_MAIN = 'gemini-3.8-flash';        // intro, promos, backstage, angles, main event (about 20 free requests a day)
+const GEMINI_MODEL_LITE = 'gemini-3.5-flash-lite';   // undercard matches (about 500 free requests a day)
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
+const AI_CUES = ['intro_music', 'bell', 'crowd_pop', 'crowd_boo', 'crowd_chant', 'mat_slam', 'pin_count', 'chair_shot'];
+const AI_SYSTEM = `You write the live text for USCW (United States Championship Wrestling), a fictional wrestling league's weekly TV show "Monday Night Mayhem" and its premium live events. Viewers read the text a few lines at a time, like a live broadcast.
+
+THE USCW CAST (the only non-wrestler characters; use only these people, never invent other staff, officials or interviewers):
+- Jason Adams is the Owner and CEO. Authoritative, brief and businesslike. He appears only in ceremonies, announcements and authority angles, or when the brief names him, and never decides anything that was not given to you.
+- Cindy Maxwell is the Ring Announcer: polished and formal. She introduces each competitor before a match (hometown, and the title on the line when there is one) and announces the winner after the bell. She also reads formal announcements.
+- Paul Sandler is an Interviewer: straight-laced and probing. He asks direct questions.
+- Jackie O'Sullivan is an Interviewer: warm but persistent, and pushes for real answers.
+
+VOICES (keep them identical in every segment):
+- Mike Johnson is the lead play-by-play announcer: professional, precise, technical and serious. He names moves correctly, tries to stay impartial and gets exasperated with Earl.
+- Earl Backwater is the color commentator: a shameless heel sympathizer. He cheers the villains, can't stand the fan favorites, makes excuses for cheating and constantly argues with Mike about which wrestlers he likes and dislikes.
+- Mike and Earl are the only commentators; the cast above never does commentary.
+
+RULES:
+- Use only the facts you are given. Do not invent championships, results, injuries, family members or backstories. All wrestlers are fictional.
+- Keep any outcome exactly as instructed. Never change who wins.
+- Write in the present tense. Keep it PG-13: brawls, chair shots and trash talk are fine; no slurs, no real-world politics or real people other than the cast above, nothing sexual.
+- Formatting inside each beat: cast and announcer lines as Mike Johnson: “...”, Earl Backwater: “...”, Cindy Maxwell: “...”, and so on; wrestler dialogue as Ring Name: “...”; action as plain narration.
+- Each beat is one short chunk of 20 to 110 words. Reach the requested total word count within about 15 percent.
+- Optional sound cue per beat, used sparingly and only when it fits: ${AI_CUES.join(', ')}, or entrance:<wrestlerId> for a wrestler's entrance (use only the ids provided). Otherwise use an empty string.
+- pause is whole seconds (0 to 6) to hold after the beat; mostly 0 or 1.
+Return only JSON in the requested shape.`;
+
+const aiStr = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+const aiList = (v, n, m) => (Array.isArray(v) ? v : []).slice(0, n).map(x => aiStr(x, m)).filter(Boolean);
+const aiIds = v => (Array.isArray(v) ? v : []).filter(x => typeof x === 'string' && ID_RE.test(x));
+
+function aiProfile(r, facts) {
+  const w = JSON.parse(r.data), mv = w.moves || {};
+  const moves = MOVE_KEYS.map(k => (Array.isArray(mv[k]) && mv[k].length ? `${MOVE_LABELS[k]}: ${mv[k].slice(0, 5).join('; ')}` : '')).filter(Boolean).join(' | ');
+  const f = w.finisher || {};
+  const lines = [
+    `- ${w.ringName} (id: ${r.id})${w.nickname ? ` “${w.nickname}”` : ''}: ${w.alignment || 'Tweener'}, ${w.style || 'all-rounder'}, from ${w.hometown || 'parts unknown'}.`,
+    w.bio ? `  Bio: ${String(w.bio).slice(0, 700)}` : '',
+    f.name ? `  Finisher: ${f.name}${f.desc ? ' — ' + String(f.desc).slice(0, 300) : ''}` : '',
+    moves ? `  Moves: ${moves.slice(0, 600)}` : '',
+    ...(facts[r.id] || []).map(t => `  Storyline: ${t}`)
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
+function aiPrompt(b, profiles, nameOf) {
+  const show = b.show, seg = b.segment;
+  const sideNames = side => side.map(nameOf).join(' & ');
+  const sidesTxt = seg.sides.filter(s => s.length).map(sideNames).join(' vs. ');
+  const words = seg.length * 150;
+  const head = [
+    `SHOW: ${show.title || 'Monday Night Mayhem'}${show.ple ? ' (premium live event)' : ''}${show.date ? ', ' + show.date : ''}${show.venue || show.city ? ', live from ' + [show.venue, show.city].filter(Boolean).join(', ') : ''}.`,
+    show.notes ? `CEO's show notes: ${show.notes}` : '',
+    b.champions.length ? `CURRENT CHAMPIONS: ${b.champions.join('; ')}.` : '',
+    profiles ? `WRESTLERS:\n${profiles}` : '',
+    b.earlier.length ? `EARLIER IN TONIGHT'S SHOW (the announcers may refer back to these; do not retell them):\n${b.earlier.map(t => '- ' + t).join('\n')}` : ''
+  ].filter(Boolean).join('\n\n');
+  let task;
+  if (b.kind === 'intro') {
+    const base = b.base.map((x, i) => `${i + 1}. ${x.text}`).join('\n');
+    task = `TASK: Write the SHOW INTRO for tonight's broadcast, about ${words} words.
+Order: (1) the show logo and theme music open the show (use the intro_music cue on that first beat); (2) the cameras pan across the crowd in the venue, vivid and specific to this venue; (3) Mike Johnson welcomes the television audience to the venue and says what a show USCW has in store, with Earl chiming in (Cindy Maxwell may add a short, formal welcome of her own); (4) Mike runs down the card, then Earl and Mike bicker briefly about who they like; (5) for each scheduled appearance, a line like "Also scheduled to be here tonight is ..." with a short blurb of that wrestler's current storyline; (6) a punchy closing line that throws to the first match.
+Never reveal who wins any match tonight.
+THE CARD:\n${b.card.matches.map(t => '- ' + t).join('\n') || '- (no matches announced)'}
+SCHEDULED APPEARANCES:\n${b.card.appearances.map(a => `- ${a.name}: ${a.facts.join(' ')}`).join('\n') || '- (none)'}
+${base ? `A plain draft already exists. Rewrite it so it reads like a real broadcast, keep every fact in it, and do not drop any match or appearance:\n${base}` : ''}`;
+  } else if (b.kind === 'polish') {
+    const base = b.base.map((x, i) => `${i + 1}. ${x.text}`).join('\n\n');
+    task = `TASK: POLISH a ${seg.type === 'promo' ? 'promo / interview' : seg.type === 'backstage' ? 'backstage segment' : seg.type === 'angle' ? 'angle / brawl' : 'segment'} that a player wrote for their own wrestler${sidesTxt ? ` (involving ${sidesTxt})` : ''}${seg.title ? `. Title: ${seg.title}` : ''}. Rewrite it so it fits the rest of the show and reads like a real broadcast, at roughly the same length (about ${b.baseWords} words; do not pad it and do not cut it by more than a fifth).
+KEEP the player's content: who says and does what, the order of events, their key lines and jokes, and how it ends. Tidy grammar, spelling and pacing. Put speech in the required format with the right ring names. Where the player wrote plain description, turn it into narration. Mike Johnson and Earl Backwater may add a short setup or reaction, but never overshadow the scene. Do not add wrestlers who are not part of it, and do not change any result, who wins or loses, or any storyline fact.
+Split it into beats of 20 to 110 words, and add sound cues or pauses only where they fit.
+THE PLAYER'S TEXT:\n${base}`;
+  } else if (seg.type === 'match') {
+    const stakes = [seg.title ? `title/billing: ${seg.title}` : '', seg.stip ? `stipulation: ${seg.stip}` : ''].filter(Boolean).join('; ');
+    const res = b.result;
+    const outcome = res.winner >= 0 && seg.sides[res.winner]
+      ? `OUTCOME (fixed, do not change): ${sideNames(seg.sides[res.winner])} ${seg.sides[res.winner].length > 1 ? 'win' : 'wins'}${res.finish ? ` — finish: ${res.finish}` : ` with their finishing move`}.`
+      : 'OUTCOME (fixed): the match ends in a draw / no contest.';
+    task = `TASK: Write the full MATCH segment, about ${words} words: ${sidesTxt}${stakes ? ` (${stakes})` : ''}.
+Start with each competitor's entrance (use an entrance:<id> cue on a short beat for each) with Cindy Maxwell's ring introduction of that competitor (hometown, and the title on the line if any), the bell, then play-by-play and color commentary from Mike and Earl with a believable back-and-forth, near-falls, the wrestlers' own moves, and the finish.
+${outcome}
+After the finish, Cindy Maxwell announces the winner (and any title change).
+${seg.desc ? `CEO notes / story for this match: ${seg.desc}` : ''}`;
+  } else {
+    task = `TASK: Write this ${seg.type === 'promo' ? 'PROMO / INTERVIEW' : seg.type === 'backstage' ? 'BACKSTAGE SEGMENT' : seg.type === 'angle' ? 'ANGLE / BRAWL' : seg.type === 'ceremony' ? 'CEREMONY / ANNOUNCEMENT' : 'SEGMENT'}, about ${words} words${sidesTxt ? `, involving ${sidesTxt}` : ''}${seg.title ? `. Title: ${seg.title}` : ''}.
+Mike and Earl may set it up and react afterwards. Wrestlers speak in character, using their alignment and storylines.
+${['promo', 'backstage'].includes(seg.type) ? 'Run it through one of the interviewers, Paul Sandler or Jackie O\'Sullivan (alternate between them, or use the one the brief names): they ask the questions and set up the wrestler\'s answers.' : ''}
+${seg.type === 'ceremony' ? 'Cindy Maxwell reads any formal announcement, and Jason Adams may speak if it fits.' : ''}${seg.type === 'angle' ? 'Jason Adams may step in to restore order only if the brief says so.' : ''}
+${seg.desc ? `CEO's brief (follow it; if it contains actual dialogue or text from a player, keep that wording as much as possible): ${seg.desc}` : 'No brief was given: build the scene from the storylines above.'}`;
+  }
+  return `${head}\n\n${task}`;
+}
+
+async function geminiCall(env, model, system, prompt, words) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 50000);
+  let res;
+  try {
+    res = await fetch(`${env.GEMINI_BASE_URL || GEMINI_BASE}${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.9,
+          maxOutputTokens: Math.min(16000, Math.round(words * 3) + 2500),
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: { beats: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+              text: { type: 'STRING' }, cue: { type: 'STRING' }, pause: { type: 'INTEGER' } }, required: ['text'] } } },
+            required: ['beats']
+          }
+        },
+        safetySettings: [
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' }
+        ]
+      })
+    });
+  } catch (e) {
+    throw Object.assign(new Error(e && e.name === 'AbortError' ? 'Gemini took too long to answer.' : 'Could not reach Gemini.'), { kind: 'upstream' });
+  } finally { clearTimeout(timer); }
+  if (!res.ok) {
+    const kind = res.status === 429 ? 'quota' : (res.status === 404 || res.status === 400) ? 'model' : 'upstream';
+    let detail = ''; try { detail = (await res.json()).error.message || ''; } catch (_) { /* no body */ }
+    console.error('gemini', model, res.status, detail.slice(0, 300));
+    throw Object.assign(new Error(`Gemini (${model}) answered ${res.status}.`), { kind });
+  }
+  const data = await res.json();
+  const cand = data.candidates && data.candidates[0];
+  const text = cand && cand.content && Array.isArray(cand.content.parts) ? cand.content.parts.map(p => p.text || '').join('') : '';
+  if (!text) throw Object.assign(new Error('Gemini declined to write this one. Try changing the brief, then draft again.'), { kind: 'blocked' });
+  let parsed;
+  try { parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (_) { parsed = null; }
+  const beats = parsed && Array.isArray(parsed.beats) ? parsed.beats : null;
+  if (!beats) throw Object.assign(new Error('Gemini’s reply could not be read. Please try again.'), { kind: 'badreply' });
+  return beats;
+}
+
+async function aiDraft(request, env) {
+  const user = await getUser(request, env, true);
+  if (!user.isAdmin) throw new HttpError(403, 'Only the CEO can use the AI writer.');
+  if (!env.GEMINI_API_KEY) throw new HttpError(503, 'The Gemini key is not set on the Worker yet (secret GEMINI_API_KEY).');
+  const raw = await readJson(request, 120 * 1024);
+  const s = raw.segment && typeof raw.segment === 'object' ? raw.segment : {};
+  const type = SEG_TYPES.includes(s.type) ? s.type : 'other';
+  const kind = raw.kind === 'intro' ? 'intro' : raw.kind === 'polish' ? 'polish' : 'segment';
+  const sh = raw.show && typeof raw.show === 'object' ? raw.show : {};
+  const res = raw.result && typeof raw.result === 'object' ? raw.result : {};
+  const card = raw.card && typeof raw.card === 'object' ? raw.card : {};
+  const sides = (Array.isArray(s.sides) ? s.sides : []).slice(0, 8).map(a => aiIds(a).slice(0, 8));
+  const facts = {};
+  if (raw.facts && typeof raw.facts === 'object') for (const [k, v] of Object.entries(raw.facts)) if (ID_RE.test(k)) facts[k] = aiList(v, 6, 400);
+  const ids = [...new Set([...sides.flat(), ...aiIds(raw.wrestlers)])].slice(0, 24);
+  const b = {
+    kind, tier: raw.tier === 'lite' ? 'lite' : 'main',
+    show: { title: aiStr(sh.title, 100), date: aiStr(sh.date, 10), venue: aiStr(sh.venue, 100), city: aiStr(sh.city, 100), ple: !!sh.ple, notes: aiStr(sh.notes, 600) },
+    segment: { type, title: aiStr(s.title, 100), stip: aiStr(s.stip, 100), desc: aiStr(s.desc, 2000), length: cleanLength(s.length, type), sides },
+    result: { winner: Number.isInteger(res.winner) && res.winner >= -1 && res.winner < sides.length ? res.winner : -1, finish: aiStr(res.finish, 300) },
+    earlier: aiList(raw.earlier, 14, 300), champions: aiList(raw.champions, 6, 200),
+    base: (Array.isArray(raw.base) ? raw.base : []).slice(0, 40).map(x => ({ text: aiStr(x && x.text, 1200) })).filter(x => x.text),
+    baseWords: 0,
+    card: {
+      matches: aiList(card.matches, 12, 400),
+      appearances: (Array.isArray(card.appearances) ? card.appearances : []).slice(0, 12)
+        .map(a => ({ name: aiStr(a && a.name, 80), facts: aiList(a && a.facts, 6, 400) })).filter(a => a.name)
+    }
+  };
+  b.baseWords = b.base.reduce((n, x) => n + x.text.split(/\s+/).filter(Boolean).length, 0);
+  if (kind === 'polish' && !b.baseWords) throw new HttpError(400, 'There is no text to polish.');
+  if (type === 'match' && kind === 'segment' && sides.filter(x => x.length).length < 2) throw new HttpError(400, 'Add the wrestlers to the match first.');
+  let rows = [];
+  if (ids.length) {
+    const q = await env.DB.prepare(`SELECT id, data FROM wrestlers WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
+    rows = q.results || [];
+  }
+  const names = {}; for (const r of rows) { try { names[r.id] = JSON.parse(r.data).ringName; } catch (_) { /* skip */ } }
+  const nameOf = id => names[id] || 'Unknown Wrestler';
+  const profiles = rows.map(r => { try { return aiProfile(r, facts); } catch (_) { return ''; } }).filter(Boolean).join('\n');
+  const prompt = aiPrompt(b, profiles, nameOf);
+  const words = kind === 'polish' ? Math.max(120, b.baseWords) : b.segment.length * 150;
+  const mainModel = env.GEMINI_MODEL_MAIN || GEMINI_MODEL_MAIN, liteModel = env.GEMINI_MODEL_LITE || GEMINI_MODEL_LITE;
+  let model = b.tier === 'lite' ? liteModel : mainModel, fellBack = false, beats;
+  try {
+    beats = await geminiCall(env, model, AI_SYSTEM, prompt, words);
+  } catch (e) {
+    // Out of daily quota, or a model name that is not valid: try the Flash-Lite model instead of failing.
+    if (b.tier === 'main' && (e.kind === 'quota' || e.kind === 'model' || e.kind === 'upstream')) {
+      model = liteModel; fellBack = true;
+      beats = await geminiCall(env, model, AI_SYSTEM, prompt, words).catch(e2 => { throw aiFail(e2); });
+    } else throw aiFail(e);
+  }
+  const ok = new Set(ids);
+  const out = cleanBeats(beats.map(x => {
+    x = x && typeof x === 'object' ? x : {};
+    const cue = typeof x.cue === 'string' ? x.cue.trim() : '';
+    const good = AI_CUES.includes(cue) || (cue.startsWith('entrance:') && ok.has(cue.slice(9)));
+    return { text: x.text, pause: Math.min(6, Number(x.pause) || 0), cue: good ? cue : '' };
+  }));
+  if (!out.length) throw new HttpError(502, 'Gemini’s reply was empty. Please try again.');
+  return json({ ok: true, beats: out, model, fellBack });
+}
+function aiFail(e) {
+  if (e instanceof HttpError) return e;
+  const msg = e.kind === 'quota' ? 'Gemini’s free daily limit has been reached. Try again later (the quota resets at midnight Pacific).'
+    : e.kind === 'model' ? (e.message + ' Check the model name in the Worker settings.') : e.message || 'The AI writer failed.';
+  return new HttpError(e.kind === 'quota' ? 429 : 502, msg);
+}
+
 /* ---------------- championships ---------------- */
+
 const champOut = r => ({ id: r.id, name: r.name, kind: r.kind, holders: JSON.parse(r.holders || '[]'), since: r.since, wonAt: r.won_at });
 
 async function championshipRoutes(request, env, id) {
@@ -648,6 +1029,12 @@ async function route(request, env) {
     if (path === '/api/reset') return resetPassword(request, env);
   }
   if (m === 'GET' && path === '/api/me') return json({ user: publicUser(await getUser(request, env, true)) });
+
+  if (m === 'POST' && path === '/api/ai/draft') return aiDraft(request, env);
+  const bm = path.match(/^\/api\/submissions(?:\/([A-Za-z0-9_-]{1,64}))?$/);
+  if (bm) return submissionRoutes(request, env, bm[1]);
+  const sm = path.match(/^\/api\/story(?:\/([A-Za-z0-9_-]{1,64}))?$/);
+  if (sm) return storyRoutes(request, env, sm[1]);
 
   const r = path.match(/^\/api\/(wrestlers|events|championships)(?:\/([A-Za-z0-9_-]{1,64}))?(?:\/(watch|script))?$/);
   if (r) {

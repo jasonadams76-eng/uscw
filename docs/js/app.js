@@ -20,7 +20,7 @@ const $ = s => document.querySelector(s);
 /* ---------- state ---------- */
 const S = {
   db:null, user:null, uid:null, isCEO:false, canWrite:false,
-  wrestlers:{}, events:{}, champs:[], loadedW:false, loadedE:false, failed:false, editing:false, draft:null
+  wrestlers:{}, events:{}, champs:[], story:{}, loadedW:false, loadedE:false, failed:false, editing:false, draft:null
 };
 
 const pleLogo=i=>'img/ple/ple-'+String(i+1).padStart(2,'0')+'.webp';
@@ -32,12 +32,12 @@ const PLE_MONTHS = [
   ['May','Memphis in May'],['June','Summer Spectacular'],['July','Beach Bash'],['August','Clash of the Titans'],
   ['September','Annihilation'],['October','Halloween Horror'],['November','Rumble in the Jungle'],['December','Holiday Havoc']
 ];
-const CUES = [['','No sound'],['bell','Bell'],['crowd_pop','Crowd pop'],['crowd_boo','Crowd boos'],['crowd_chant','Crowd chant'],['mat_slam','Slam on the mat'],['pin_count','Pin count'],['chair_shot','Chair shot'],['entrance','Entrance theme…']];
+const CUES = [['','No sound'],['intro_music','Show intro music'],['bell','Bell'],['crowd_pop','Crowd pop'],['crowd_boo','Crowd boos'],['crowd_chant','Crowd chant'],['mat_slam','Slam on the mat'],['pin_count','Pin count'],['chair_shot','Chair shot'],['entrance','Entrance theme…']];
 const LENGTHS = [[1,'Short · 1 min'],[3,'Medium · 3 min'],[6,'Long · 6 min'],[10,'Epic · 10 min']];
 const WORDS_PER_MIN = 150;
-const defLength = type => type==='match'?6:3;
+const defLength = type => type==='match'?6:type==='show_intro'?4:3;
 const wordCount = t => (String(t||'').trim().match(/\S+/g)||[]).length;
-const SEG_TYPES = {match:'Match', promo:'Promo / Interview', backstage:'Backstage Segment', angle:'Angle / Brawl', ceremony:'Ceremony / Announcement', other:'Other'};
+const SEG_TYPES = {show_intro:'Show Intro', match:'Match', promo:'Promo / Interview', backstage:'Backstage Segment', angle:'Angle / Brawl', ceremony:'Ceremony / Announcement', other:'Other'};
 const MOVE_CATS = [
   ['strikes','Strikes & Kicks'],
   ['grapples','Slams, Suplexes & Power Moves'],
@@ -104,9 +104,10 @@ function renderNav(r){
   const nav=$('#nav'); nav.replaceChildren();
   const items=[['home','Home'],['mayhem','Mayhem'],['superstars','Superstars'],['ples','PLE Calendar']];
   if (S.user) items.push(['my-wrestler', S.wrestlers[S.uid] ? 'My Wrestler' : 'Create Wrestler']);
+  if (S.user && S.wrestlers[S.uid]) items.push(['hub','My Hub']);
   if (S.isCEO) items.push(['ceo','CEO Office']);
   const active = r.name==='wrestler'?'superstars': (r.name==='event'||r.name==='watch')?((S.events[r.id]&&S.events[r.id].ple)?'ples':'mayhem'): (r.name==='ceo-new-event'||r.name==='ceo-edit')?'ceo': (r.name==='edit'&&r.id===S.uid)?'my-wrestler': r.name;
-  items.forEach(([k,l])=>nav.append(h('a',{href:'#'+k,class:active===k?'on':''},l)));
+  items.forEach(([k,l])=>nav.append(h('a',{href:'#'+k,class:active===k?'on':''},l,(k==='ceo'&&unseenSubs())?h('span',{class:'badge',title:unseenSubs()+' new player submission(s)'},unseenSubs()):null)));
   if (S.user) nav.append(h('a',{href:'#home',onclick:e=>{e.preventDefault();doLogout();}},'Log out'));
   else { nav.append(h('a',{href:'#login',class:active==='login'?'on':''},'Log in')); nav.append(h('a',{href:'#register',class:active==='register'?'on':''},'Sign up')); }
 }
@@ -224,6 +225,342 @@ function pageSuperstars(){
   return wrap;
 }
 
+/* ----- storylines (CEO only) + intro writer ----- */
+const RESULT_OPTS=['Win','Loss','Draw','No Contest'];
+const MONTH_RE=/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i;
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+const andList=a=>a.length<2?(a[0]||''):a.length===2?a[0]+' and '+a[1]:a.slice(0,-1).join(', ')+', and '+a[a.length-1];
+const trimEnd=t=>String(t||'').trim().replace(/[.!?\s]+$/,'');
+function ordinal(n){ const v=n%100; return n+(['th','st','nd','rd'][(v-20)%10]||['th','st','nd','rd'][v]||'th'); }
+function niceDate(iso,dow){
+  if(!iso) return '';
+  const [y,m,d]=iso.split('-').map(Number), dt=new Date(y,m-1,d);
+  return (dow?dt.toLocaleDateString('en-US',{weekday:'long'})+', ':'')+dt.toLocaleDateString('en-US',{month:'long'})+' '+ordinal(d);
+}
+function storyOf(id){ const s=(S.story&&S.story[id])||{}; return {results:s.results||[],feuds:s.feuds||[],notes:s.notes||[]}; }
+async function saveStory(id, mutate){
+  const st=JSON.parse(JSON.stringify(storyOf(id))); mutate(st);
+  await api('PUT','/story/'+id,st);
+  S.story=S.story||{}; S.story[id]=st;
+}
+function matchStakes(sg){
+  const bits=[], t=(sg.title||'').trim(), st=(sg.stip||'').trim();
+  if(t) bits.push(/\b(title|championship|belt|titles)\b/i.test(t)?'with the '+t+' on the line':'billed as '+t);
+  if(st){ const core=st.replace(/\s+match$/i,''); bits.push('in '+(/^[aeiou]/i.test(core)?'an ':'a ')+core+' match'); }
+  return bits;
+}
+const sidesText=sides=>(sides||[]).filter(x=>x.length).map(x=>andList(x.map(wname))).join(' vs. ');
+// Upcoming matches for a wrestler come straight from the published cards.
+function upcomingFor(wid,o){
+  const out=[];
+  Object.values(S.events).forEach(e=>{
+    if(!e.published||(e.date||'')<o.from||e.id===o.exceptId) return;
+    (e.segments||[]).forEach(sg=>{
+      if(sg.type!=='match') return;
+      const si=(sg.sides||[]).findIndex(side=>side.includes(wid));
+      if(si>=0) out.push({e,sg,si});
+    });
+  });
+  return out.sort((a,b)=>((a.e.date||'')+(a.e.time||'')).localeCompare((b.e.date||'')+(b.e.time||'')));
+}
+function upMeta(u,wid){
+  const others=u.sg.sides.filter((_,i)=>i!==u.si).filter(x=>x.length).map(x=>andList(x.map(wname)));
+  const partners=u.sg.sides[u.si].filter(x=>x!==wid).map(wname);
+  const where=[u.e.venue,u.e.city].filter(Boolean).join(', ');
+  return {others,partners,where,stakes:matchStakes(u.sg)};
+}
+function upcomingLine(u,wid){
+  const m=upMeta(u,wid);
+  return niceDate(u.e.date,true)+' · '+(u.e.title||'Show')+(m.where?' · '+m.where:'')+' — '+(m.partners.length?'with '+andList(m.partners)+' ':'')+'vs. '+(m.others.join(' vs. ')||'TBA')+(m.stakes.length?' ('+m.stakes.join(', ')+')':'');
+}
+function noteLine(n,note){
+  let t=trimEnd(note.text);
+  if(!t.toLowerCase().startsWith(n.toLowerCase())) t=n+' '+t;
+  if(note.date&&!MONTH_RE.test(t)&&!/edition/i.test(t)) t+=' on the '+niceDate(note.date)+' edition of '+(note.show||'Mayhem');
+  return t+'.';
+}
+function resultLine(n,r){
+  const o=r.opponent, how=r.how?' ('+trimEnd(r.how)+')':'', on=r.show?' on '+r.show:'';
+  const what=r.result==='Loss'?'a loss to '+o:r.result==='Draw'?'a draw with '+o:r.result==='No Contest'?'a no contest against '+o:'a win over '+o;
+  return n+' comes in off '+what+on+how+'.';
+}
+// A short run of storyline sentences about one wrestler, as of the date of the show being written.
+function storyBlurb(wid,d){
+  const st=storyOf(wid), n=wname(wid), out=[], cut=d.date||'9999-12-31';
+  const desc=(a,b)=>(b.date||'').localeCompare(a.date||'');
+  const note=st.notes.filter(x=>!x.date||x.date<=cut).sort(desc)[0];
+  if(note) out.push(noteLine(n,note));
+  st.feuds.slice(0,2).forEach(f=>{
+    const fn=S.wrestlers[f.with]?S.wrestlers[f.with].ringName:f.with;
+    out.push(n+' is locked in a heated feud with '+fn+(f.reason?': '+trimEnd(f.reason):'')+'.');
+  });
+  const res=st.results.filter(x=>!x.date||x.date<=cut).sort(desc)[0];
+  if(res) out.push(resultLine(n,res));
+  const from=d.date&&d.date>todayISO()?d.date:todayISO();
+  const up=upcomingFor(wid,{from,exceptId:d.id}).filter(u=>u.e.date>(d.date||''))[0];
+  if(up){
+    const m=upMeta(up,wid);
+    out.push('Looking ahead, '+n+' is booked to '+(m.partners.length?'team with '+andList(m.partners)+' to ':'')+'face '+(andList(m.others)||'a mystery opponent')+' at '+(up.e.title||'an upcoming show')+' on '+niceDate(up.e.date,true)+(m.where?', live from '+m.where:'')+(m.stakes.length?', '+m.stakes.join(', '):'')+'.');
+  }
+  return out;
+}
+// The built-in Show Intro writer: opening logo + music, crowd pan, Mike Johnson's welcome and the card rundown.
+function draftIntro(d){
+  const beats=[], say=t=>'Mike Johnson: “'+t+'”';
+  const matches=d.segments.filter(s=>s.type==='match'&&s.sides.some(x=>x.length));
+  const venue=(d.venue||'').trim(), city=(d.city||'').trim();
+  const place=venue?venue+(city?' in '+city:''):(city||'the arena');
+  const title=(d.title||'').trim()||'Monday Night Mayhem';
+  const night=d.date?new Date(+d.date.slice(0,4),+d.date.slice(5,7)-1,+d.date.slice(8,10)).toLocaleDateString('en-US',{weekday:'long'}):'';
+  beats.push({cue:'intro_music',pause:2,text:'The screen goes black. A single spotlight snaps on, the '+title+' logo explodes onto the screen, and the show’s theme music thunders through the building.'});
+  const crowd=[
+    'The cameras sweep across a packed '+(venue||'arena')+', a sea of fans on their feet as the lights flash and the noise keeps building.',
+    'A hand-held camera dives into the front rows: kids on shoulders, fans pounding the barricade, and signs for every superstar on the roster bobbing overhead.',
+    'High above the ring, a wide shot reveals every seat taken, the upper deck shaking as a chant rolls around the building.',
+    'Pyro bursts from the stage as the camera swings down the entrance ramp toward the ring, where the lights glint off the ring posts.',
+    'Back in the crowd, fans in homemade shirts scream at the camera, some already hoarse, none of them willing to sit down.',
+    'The shot pushes in on ringside, where the commentary desk waits under the spotlights and the front row leans in for a better view.',
+    'Fans crane toward the giant video screen as the USCW logo flashes across it, and the crowd answers with a thunderous roar.'
+  ];
+  if(city) crowd.push(city+' has shown up in force tonight, and you can feel it in every shot of the building.');
+  shuffle(crowd).slice(0,3).forEach((t,i)=>beats.push({text:t,pause:1,cue:i===1?'crowd_pop':''}));
+  beats.push({cue:'',pause:1,text:say(pick([
+    'Ladies and gentlemen, welcome to '+title+', live from '+place+'! I’m Mike Johnson, and you are not going to believe the show USCW has in store for you '+(night?'this '+night+' ':'')+'night!',
+    'Good evening, everybody, and welcome to '+title+', coming to you live from '+place+'! This is Mike Johnson, and tonight is one you will be talking about for a long time!',
+    'Welcome, USCW universe, to '+title+'! We are live from '+place+', the crowd is red hot, and we have an unbelievable show for you tonight!'
+  ])+' Let me run down what we have for you.')});
+  matches.forEach((sg,i)=>{
+    const main=matches.length>1&&i===matches.length-1;
+    const lead=main?pick(['And in tonight’s main event','Closing the show, our main event','And the main event of the night']):i===0?pick(['Kicking things off','First up tonight']):pick(['Also on the card','Later tonight','Plus']);
+    const stakes=matchStakes(sg);
+    let t=lead+', '+sidesText(sg.sides)+(stakes.length?', '+stakes.join(', '):'')+'.';
+    const ids=sg.sides.map(x=>x), flat=sg.sides.flat();
+    let fl='';
+    for(let a=0;a<flat.length&&!fl;a++) for(let b=0;b<flat.length&&!fl;b++){
+      if(a===b||ids.findIndex(s=>s.includes(flat[a]))===ids.findIndex(s=>s.includes(flat[b]))) continue;
+      const f=storyOf(flat[a]).feuds.find(x=>x.with===flat[b]);
+      if(f) fl=' '+(f.reason?'This one is personal: '+trimEnd(f.reason)+'.':wname(flat[a])+' and '+wname(flat[b])+' have a score to settle.');
+    }
+    beats.push({cue:main?'crowd_pop':'',pause:0,text:say(t+fl)});
+  });
+  if(!matches.length) beats.push({cue:'',pause:0,text:say('The card is being kept under wraps tonight, and I can tell you, nobody is ready for what is coming!')});
+  const inMatch=new Set(matches.flatMap(s=>s.sides.flat()));
+  const appear=[];
+  d.segments.filter(s=>s.type!=='match'&&s.type!=='show_intro').forEach(s=>s.sides.flat().forEach(w=>{ if(S.wrestlers[w]&&!inMatch.has(w)&&!appear.includes(w)) appear.push(w); }));
+  appear.forEach(w=>{
+    const n=wname(w), bl=storyBlurb(w,d);
+    const lead=pick(['Also scheduled to be here tonight is '+n,'We have also been told that '+n+' is scheduled to be here tonight']);
+    beats.push({cue:'',pause:0,text:say(lead+(bl.length?'. '+bl.join(' '):'!'))});
+  });
+  beats.push({cue:'crowd_pop',pause:0,text:say('It is going to be a wild one, so do not go anywhere. This is '+title+', and it starts right now!')});
+  beats.forEach(b=>{ b.text=b.text.slice(0,1200); });
+  const words=beats.reduce((n,b)=>n+wordCount(b.text),0), pauses=beats.reduce((n,b)=>n+(b.pause||0),0);
+  return {beats, length:Math.max(1,Math.min(30,Math.ceil(words/WORDS_PER_MIN+pauses/60)))};
+}
+/* ----- AI writer (Gemini through the Worker) ----- */
+const AI_GAP_MS=7000;   // pause between calls when writing the whole card, to stay under the free-tier rate limit
+function segLabel(s){ return (SEG_TYPES[s.type]||'Segment')+(s.title?': '+s.title:'')+(s.type==='match'&&s.sides.some(x=>x.length)?' — '+sidesText(s.sides):''); }
+function resultText(s){
+  const r=s.result||{};
+  if(Number.isInteger(r.winner)&&r.winner>=0&&s.sides[r.winner]) return andList(s.sides[r.winner].map(wname))+' won'+(r.finish?' ('+trimEnd(r.finish)+')':'');
+  if(r.winner===-1) return 'ended in a draw / no contest';
+  return '';
+}
+function feudLine(sg){
+  const flat=sg.sides.flat();
+  for(let a=0;a<flat.length;a++) for(let b=0;b<flat.length;b++){
+    if(a===b||sg.sides.findIndex(x=>x.includes(flat[a]))===sg.sides.findIndex(x=>x.includes(flat[b]))) continue;
+    const f=storyOf(flat[a]).feuds.find(x=>x.with===flat[b]);
+    if(f) return ' (feud: '+wname(flat[a])+' vs. '+wname(flat[b])+(f.reason?' — '+trimEnd(f.reason):'')+')';
+  }
+  return '';
+}
+function introFacts(d){
+  const matches=d.segments.filter(s=>s.type==='match'&&s.sides.some(x=>x.length));
+  const lines=matches.map((sg,i)=>{
+    const st=matchStakes(sg);
+    return (matches.length>1&&i===matches.length-1?'MAIN EVENT: ':'')+sidesText(sg.sides)+(st.length?' ('+st.join(', ')+')':'')+feudLine(sg);
+  });
+  const inMatch=new Set(matches.flatMap(s=>s.sides.flat())), appear=[];
+  d.segments.filter(s=>s.type!=='match'&&s.type!=='show_intro').forEach(s=>s.sides.flat().forEach(w=>{ if(S.wrestlers[w]&&!inMatch.has(w)&&!appear.includes(w)) appear.push(w); }));
+  return {matches:lines, appearances:appear.map(w=>({name:wname(w),facts:storyBlurb(w,d).slice(0,6)}))};
+}
+function aiEarlier(d,idx){
+  const out=[];
+  d.segments.slice(0,idx).forEach(s=>{
+    if(s.type==='show_intro') return;
+    if(s.type==='match'){
+      if(!s.sides.some(x=>x.length)) return;
+      const r=resultText(s), st=matchStakes(s);
+      out.push('Match: '+sidesText(s.sides)+(st.length?' ('+st.join(', ')+')':'')+(r?' — '+r:'')+(s.desc?'. '+s.desc.slice(0,150):''));
+    } else if(s.title||s.desc){
+      const who=s.sides.flat().filter(w=>S.wrestlers[w]).map(wname);
+      out.push((SEG_TYPES[s.type]||'Segment')+(s.title?' "'+s.title+'"':'')+(who.length?' ('+andList(who)+')':'')+(s.desc?': '+s.desc.slice(0,200):''));
+    }
+  });
+  return out.slice(-12).map(t=>t.slice(0,300));
+}
+// Intro, non-match segments and the main event use the stronger (but scarcer) model; other matches use Flash-Lite.
+function aiTier(d,idx){
+  const s=d.segments[idx], last=d.segments.reduce((a,x,i)=>x.type==='match'?i:a,-1);
+  return (s.type!=='match'||idx===last)?'main':'lite';
+}
+function aiPayload(d,idx){
+  const s=d.segments[idx], isIntro=s.type==='show_intro';
+  const ids=[...new Set((isIntro?d.segments.filter(x=>x.type!=='show_intro'):[s]).flatMap(x=>x.sides.flat()).filter(w=>S.wrestlers[w]))].slice(0,24);
+  const facts={}; ids.forEach(w=>{ facts[w]=storyBlurb(w,d).slice(0,6); });
+  const p={kind:isIntro?'intro':'segment', tier:aiTier(d,idx),
+    show:{title:d.title,date:d.date,venue:d.venue,city:d.city,ple:!!d.ple,notes:d.notes},
+    segment:{type:s.type,title:s.title,stip:s.stip,desc:s.desc,length:s.length,sides:s.sides.map(x=>x.filter(w=>S.wrestlers[w]))},
+    wrestlers:ids, facts, earlier:aiEarlier(d,idx),
+    champions:S.champs.filter(c=>c.holders.some(id=>S.wrestlers[id])).map(c=>c.name+': '+andList(c.holders.filter(id=>S.wrestlers[id]).map(wname)))};
+  if(s.type==='match') p.result={winner:Number.isInteger(s.result&&s.result.winner)?s.result.winner:-1,finish:(s.result&&s.result.finish)||''};
+  if(isIntro){
+    p.card=introFacts(d);
+    p.base=(s.beats.some(b=>(b.text||'').trim())?s.beats:draftIntro(d).beats).map(b=>({text:b.text}));
+  }
+  return p;
+}
+async function aiRun(d,idx){
+  const r=await api('POST','/ai/draft',aiPayload(d,idx));
+  d.segments[idx].beats=r.beats.map(b=>({text:b.text||'',pause:b.pause||0,cue:b.cue||''}));
+  return r;
+}
+// Polish a player's own text (from an approved Hub pitch). Shows the result next to the original; nothing changes until "Use polished".
+function polishBeats(d,idx,beats){
+  const p=aiPayload(d,idx);
+  p.kind='polish'; p.tier='main'; p.base=beats.map(b=>({text:b.text}));
+  return api('POST','/ai/draft',p);
+}
+function polishDialog(d,idx,beats,onUse){
+  const asText=bs=>bs.map(b=>b.text).join('\n\n');
+  const col=(t,txt)=>h('div',{style:'flex:1;min-width:240px'},h('div',{class:'hint',style:'font-weight:700;margin-bottom:4px'},t),h('div',{class:'bio',style:'white-space:pre-wrap;max-height:300px;overflow:auto;border:1px solid var(--line,#ccd);padding:8px;color:var(--text)'},txt));
+  const box=h('div',{},h('div',{class:'hint'},'Gemini is polishing the text…'));
+  let cur=null, close=()=>{};
+  const status=h('span',{class:'hint'});
+  const go=async()=>{
+    cur=null; status.textContent='Writing…';
+    try{
+      const r=await polishBeats(d,idx,beats);
+      cur=r.beats.map(b=>({text:b.text||'',pause:b.pause||0,cue:b.cue||''}));
+      box.replaceChildren(h('div',{class:'row',style:'align-items:flex-start;gap:12px'},col('Original',asText(beats)),col('Polished',asText(cur))));
+      status.textContent=r.fellBack?'Written by the backup model.':'';
+    }catch(e){ box.replaceChildren(h('div',{class:'hint',style:'color:#b00'},(e&&e.message)||'The AI writer failed.')); status.textContent=''; }
+    useBtn.disabled=!cur; redo.disabled=false;
+  };
+  const useBtn=h('button',{class:'btn sm',type:'button',disabled:true,onclick:()=>{ if(!cur) return; onUse(cur); close(); }},'Use polished');
+  const redo=h('button',{class:'btn alt sm',type:'button',disabled:true,onclick:()=>{ useBtn.disabled=true; redo.disabled=true; box.replaceChildren(h('div',{class:'hint'},'Gemini is polishing the text…')); go(); }},'Redraft');
+  modal('✨ Polish with AI',box,c=>{ close=c; return [status,h('button',{class:'btn alt sm',type:'button',onclick:c},'Keep original'),redo,useBtn]; });
+  go();
+}
+function wholeCardDialog(d,onDone){
+  if(!d.segments.length){ toast('Add some segments to the card first.',true); return; }
+  let cancel=false;
+  const status=h('div',{class:'hint',style:'margin-top:10px;min-height:20px'});
+  const summary=h('div',{class:'hint',style:'margin:8px 0'});
+  const rows=d.segments.map((s,i)=>{
+    const has=s.beats.some(b=>(b.text||'').trim());
+    const chk=h('input',{type:'checkbox',checked:!has,style:'width:auto',onchange:sum});
+    let extra=null;
+    if(s.type==='match'){
+      s.result=s.result||{winner:null,finish:''};
+      extra=h('div',{class:'row',style:'margin:4px 0 0 26px'},
+        h('select',{style:'width:auto',onchange:e=>{ const v=e.target.value; s.result.winner=v===''?null:v==='draw'?-1:Number(v); }},
+          h('option',{value:''},'— winner? —'),
+          s.sides.map((side,si)=>side.length?h('option',{value:String(si),selected:s.result.winner===si},andList(side.map(wname))+' win'):null),
+          h('option',{value:'draw',selected:s.result.winner===-1},'Draw / no contest')),
+        h('input',{type:'text',style:'flex:1;min-width:180px',placeholder:'Finish (optional)',value:s.result.finish||'',oninput:e=>{s.result.finish=e.target.value;}}));
+    }
+    return {s,chk,el:h('div',{class:'wc-row'},h('label',{style:'display:flex;gap:8px;align-items:center;cursor:pointer'},chk,h('span',{},(i+1)+'. '+segLabel(s)+(has?'  (already has text)':''))),extra)};
+  });
+  function sum(){
+    const picked=rows.filter(r=>r.chk.checked), main=picked.filter(r=>aiTier(d,d.segments.indexOf(r.s))==='main').length;
+    summary.textContent=picked.length+' segment'+(picked.length===1?'':'s')+' selected · uses '+main+' Gemini 3.8 Flash (about 20 free a day) and '+(picked.length-main)+' Flash-Lite requests. Takes about '+Math.max(1,Math.round(picked.length*(AI_GAP_MS/1000+12)/60))+' min.';
+  }
+  sum();
+  const body=h('div',{},
+    h('p',{style:'margin:0 0 8px'},'The AI writes each ticked segment in card order, using the wrestlers’ profiles, their storylines and what happened earlier in the night. Pick the winner of every match first. Nothing is saved until you save the show.'),
+    h('div',{class:'row',style:'margin-bottom:6px'},
+      h('button',{type:'button',class:'btn alt sm',onclick:()=>{rows.forEach(r=>r.chk.checked=true);sum();}},'Select all'),
+      h('button',{type:'button',class:'btn alt sm',onclick:()=>{rows.forEach(r=>r.chk.checked=false);sum();}},'Select none')),
+    h('div',{class:'wc-list'},rows.map(r=>r.el)), summary, status);
+  modal('Draft whole card with AI',body,close=>{
+    const go=h('button',{class:'btn sm',type:'button',onclick:async()=>{
+      const todo=rows.filter(r=>r.chk.checked);
+      if(!todo.length){ status.textContent='Tick at least one segment.'; return; }
+      if(todo.some(r=>r.s.type==='match'&&!Number.isInteger(r.s.result.winner))){ status.textContent='Pick a winner (or Draw) for every match you want written.'; return; }
+      const thin=todo.find(r=>r.s.type==='match'&&r.s.sides.filter(x=>x.length).length<2);
+      if(thin){ status.textContent='“'+segLabel(thin.s)+'” needs wrestlers on at least two sides before the AI can write it.'; return; }
+      go.disabled=true; let done=0;
+      for(let k=0;k<todo.length;k++){
+        if(cancel) break;
+        const r=todo[k];
+        status.textContent='Writing '+(k+1)+' of '+todo.length+': '+segLabel(r.s)+'…';
+        try{ await aiRun(d,d.segments.indexOf(r.s)); done++; }
+        catch(e){ status.textContent='Stopped at “'+segLabel(r.s)+'”: '+(e.message||'failed')+' ('+done+' written so far.)'; onDone(); go.disabled=false; return; }
+        if(k<todo.length-1&&!cancel) await new Promise(ok=>setTimeout(ok,AI_GAP_MS));
+      }
+      onDone(); status.textContent=cancel?'Stopped. '+done+' written.':'Done. '+done+' segment'+(done===1?'':'s')+' written. Review and edit them, then save the show.';
+      go.textContent='Done'; go.disabled=false; go.onclick=close;
+    }},'✨ Write it');
+    return [h('button',{class:'btn alt sm',type:'button',onclick:()=>{cancel=true;close();}},'Close'),go];
+  });
+}
+
+function storyPanel(id){
+  const w=S.wrestlers[id], box=h('div',{class:'story'});
+  async function mut(fn,msg){ if(await safe(()=>saveStory(id,fn),msg)) draw(); }
+  const rosterOpts=Object.entries(S.wrestlers).filter(([k])=>k!==id).sort((a,b)=>a[1].ringName.localeCompare(b[1].ringName));
+  const del=(label,fn)=>h('button',{type:'button',class:'btn danger sm',title:'Delete',onclick:()=>mut(fn,'Removed.')},label||'×');
+  function draw(){
+    box.replaceChildren();
+    const st=storyOf(id);
+    box.append(h('div',{class:'cond story-h'},'Storylines — CEO only'),
+      h('div',{class:'hint',style:'margin:0 0 10px'},'The Show Intro writer reads this to describe what is going on with '+w.ringName+'. Keep it fresh after each show.'));
+    const up=upcomingFor(id,{from:todayISO()});
+    box.append(h('h3',{},'Upcoming matches'),
+      up.length?h('ul',{class:'story-list'},up.map(u=>h('li',{},upcomingLine(u,id)))):h('div',{class:'hint'},'None yet. This fills in automatically from published cards.'));
+    // results
+    const r={date:todayISO(),show:'',opponent:'',result:'Win',how:''};
+    box.append(h('h3',{},'Recent results'),
+      st.results.length?h('ul',{class:'story-list'},st.results.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(it=>h('li',{},
+        h('span',{},(it.date?niceDate(it.date)+' · ':'')+(it.show?it.show+' · ':'')+it.result+' vs. '+it.opponent+(it.how?' ('+it.how+')':'')),
+        del('×',s=>{s.results=s.results.filter(x=>x.id!==it.id);})))):h('div',{class:'hint'},'No results recorded.'),
+      h('div',{class:'story-add'},
+        h('input',{type:'date',value:r.date,oninput:e=>{r.date=e.target.value;}}),
+        h('input',{type:'text',placeholder:'Show (e.g. Mayhem)',oninput:e=>{r.show=e.target.value;}}),
+        h('input',{type:'text',placeholder:'Opponent',list:'story-opps-'+id,oninput:e=>{r.opponent=e.target.value;}}),
+        h('select',{onchange:e=>{r.result=e.target.value;}},RESULT_OPTS.map(o=>h('option',{value:o},o))),
+        h('input',{type:'text',placeholder:'How (optional)',oninput:e=>{r.how=e.target.value;}}),
+        h('button',{type:'button',class:'btn sm',onclick:()=>{ if(!r.opponent.trim()){toast('Enter the opponent.',true);return;} mut(s=>{s.results.unshift({id:uid8(),date:r.date,show:r.show.trim(),opponent:r.opponent.trim(),result:r.result,how:r.how.trim()});},'Result added.'); }},'Add result'),
+        h('datalist',{id:'story-opps-'+id},rosterOpts.map(([k,x])=>h('option',{value:x.ringName})))));
+    // feuds
+    const f={with:'',reason:''};
+    box.append(h('h3',{},'Current feuds'),
+      st.feuds.length?h('ul',{class:'story-list'},st.feuds.map(it=>h('li',{},
+        h('span',{},(S.wrestlers[it.with]?S.wrestlers[it.with].ringName:it.with)+(it.reason?' — '+it.reason:'')),
+        del('×',s=>{s.feuds=s.feuds.filter(x=>x.id!==it.id);})))):h('div',{class:'hint'},'No active feuds.'),
+      h('div',{class:'story-add'},
+        h('select',{onchange:e=>{f.with=e.target.value;}},h('option',{value:''},'Feuding with…'),rosterOpts.map(([k,x])=>h('option',{value:k},x.ringName))),
+        h('input',{type:'text',class:'wide',placeholder:'What it is about (optional)',oninput:e=>{f.reason=e.target.value;}}),
+        h('button',{type:'button',class:'btn sm',onclick:()=>{ if(!f.with){toast('Pick who the feud is with.',true);return;} mut(s=>{s.feuds.push({id:uid8(),with:f.with,reason:f.reason.trim()});},'Feud added.'); }},'Add feud')));
+    // notes
+    const nt={date:todayISO(),show:'',text:''};
+    box.append(h('h3',{},'Show notes'),
+      st.notes.length?h('ul',{class:'story-list'},st.notes.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(it=>h('li',{},
+        h('span',{},(it.date?niceDate(it.date)+' · ':'')+(it.show?it.show+' · ':'')+w.ringName+' '+it.text),
+        del('×',s=>{s.notes=s.notes.filter(x=>x.id!==it.id);})))):h('div',{class:'hint'},'No notes yet.'),
+      h('div',{class:'story-add'},
+        h('input',{type:'date',value:nt.date,oninput:e=>{nt.date=e.target.value;}}),
+        h('input',{type:'text',placeholder:'Show (e.g. Mayhem)',oninput:e=>{nt.show=e.target.value;}}),
+        h('input',{type:'text',class:'wide',placeholder:'Continue the name: “was attacked backstage by …”',oninput:e=>{nt.text=e.target.value;}}),
+        h('button',{type:'button',class:'btn sm',onclick:()=>{ if(!nt.text.trim()){toast('Write the note first.',true);return;} mut(s=>{s.notes.unshift({id:uid8(),date:nt.date,show:nt.show.trim(),text:nt.text.trim()});},'Note added.'); }},'Add note')));
+  }
+  draw();
+  return box;
+}
+
 function pageWrestler(id){
   const w=S.wrestlers[id];
   if(!w) return h('div',{class:'empty'},'That wrestler could not be found. ',h('a',{href:'#superstars',style:'color:var(--red2)'},'Back to the superstars'));
@@ -261,7 +598,8 @@ function pageWrestler(id){
     priv?h('div',{class:'wp-private'},
       h('div',{class:'cond wp-priv-h'},S.isCEO?'CEO only — hidden from the public':'Only you and the CEO can see this'),
       w.realName?h('div',{class:'stats',style:'margin-top:0'},stat('Real name',w.realName)):null,
-      cats.length?h('div',{class:'moves',style:'margin-top:12px'},cats.map(([k,l])=>h('div',{class:'card'},h('h3',{},l),h('ul',{},mv[k].map(m=>h('li',{},m)))))):null):null);
+      cats.length?h('div',{class:'moves',style:'margin-top:12px'},cats.map(([k,l])=>h('div',{class:'card'},h('h3',{},l),h('ul',{},mv[k].map(m=>h('li',{},m)))))):null):null,
+    S.isCEO?storyPanel(id):null);
   wrap.append(card);
   return wrap;
 }
@@ -403,6 +741,46 @@ function pageMayhem(){
 }
 
 /* ----- watching a show: text revealed a little at a time ----- */
+/* ----- Sound: every file is optional. A cue with no file is silent; with an empty manifest the sound controls never appear. ----- */
+const SND={man:null,loading:null,music:null,fade:null,shared:null,pref:(()=>{ try{ return Object.assign({on:true,vol:0.7},JSON.parse(localStorage.getItem('uscw_snd')||'{}')); }catch(_){ return {on:true,vol:0.7}; } })()};
+function sndSave(){ try{ localStorage.setItem('uscw_snd',JSON.stringify(SND.pref)); }catch(_){} }
+function sndLoad(){
+  if(!SND.loading) SND.loading=fetch('audio/sounds.json',{cache:'no-cache'}).then(r=>r.ok?r.json():null).catch(()=>null).then(m=>{
+    m=m&&typeof m==='object'?m:{}; SND.man={cues:m.cues||{},entrances:m.entrances||{},def:m.defaultEntrance||''}; return SND.man; });
+  return SND.loading;
+}
+function sndAny(){ const m=SND.man; return !!(m&&(Object.values(m.cues).some(Boolean)||Object.values(m.entrances).some(Boolean)||m.def)); }
+function sndFile(cue){
+  const m=SND.man; if(!m||!cue) return '';
+  if(cue==='entrance') return m.def;
+  if(cue.startsWith('entrance:')) return m.entrances[cue.slice(9)]||m.def;
+  return m.cues[cue]||'';
+}
+const sndIsMusic=cue=>cue==='intro_music'||cue==='entrance'||cue.startsWith('entrance:');
+function sndFadeOut(ms,duck){
+  const a=SND.music; if(!a) return; SND.music=null; clearInterval(SND.fade);
+  if(duck){ try{a.volume=a.volume*duck;}catch(_){} }
+  const v0=a.volume, t0=Date.now();
+  SND.fade=setInterval(()=>{ const k=(Date.now()-t0)/ms; if(k>=1){ clearInterval(SND.fade); try{a.pause();}catch(_){} } else { try{a.volume=Math.max(0,v0*(1-k));}catch(_){} } },100);
+}
+function sndStop(){ clearInterval(SND.fade); if(SND.music){ try{SND.music.pause();}catch(_){} SND.music=null; } }
+// Call from a click so browsers allow sound later.
+function sndUnlock(){ try{ const a=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='); a.play().catch(()=>{}); }catch(_){} }
+function sndPlay(cue,force){
+  try{
+    if(!cue||(!force&&!SND.pref.on)) return false;
+    const f=sndFile(cue); if(!f) return false;
+    const a=new Audio('audio/'+encodeURI(f)); a.volume=Math.max(0,Math.min(1,SND.pref.vol));
+    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); }
+    a.addEventListener('error',()=>{ if(SND.music===a) SND.music=null; });
+    const pr=a.play(); if(pr&&pr.catch) pr.catch(()=>{});
+    return true;
+  }catch(_){ return false; }
+}
+// A new beat arrives: let any music fade away under it, then play the beat's own sound.
+// The show theme is long: it drops under the announcers and fades slowly. Other music fades out quickly.
+function sndBeat(cue){ if(SND.music) (SND.intro?sndFadeOut(22000,0.35):sndFadeOut(4000)); if(cue) sndPlay(cue); }
+
 function pageWatch(id){
   const e=S.events[id];
   if(!e||!(e.published||S.isCEO)) return h('div',{class:'empty'},'Show not found.');
@@ -413,11 +791,13 @@ function pageWatch(id){
   const clearView=()=>{ try{ localStorage.removeItem(KEY); }catch(_){} };
   const timers=new Set(); let stopped=false;
   const later=(fn,ms)=>{ const t=setTimeout(()=>{ timers.delete(t); if(!stopped) fn(); },ms); timers.add(t); return t; };
-  S.stopWatch=()=>{ stopped=true; timers.forEach(t=>{clearTimeout(t);clearInterval(t);}); timers.clear(); };
+  S.stopWatch=()=>{ stopped=true; timers.forEach(t=>{clearTimeout(t);clearInterval(t);}); timers.clear(); sndStop(); };
   const wc=t=>(String(t||'').trim().match(/\S+/g)||[]).length;
 
   function startScreen(msg){
     wrap.replaceChildren();
+    sndLoad().then(()=>{ if(sndAny()&&!stopped&&soundRow) soundRow.style.display=''; });
+    const soundRow=h('label',{class:'hint snd-row',style:'display:none;justify-content:center;gap:6px;align-items:center;margin-top:10px'},h('input',{type:'checkbox',style:'width:auto',checked:SND.pref.on,onchange:e=>{ SND.pref.on=e.target.checked; sndSave(); }}),'🔊 Play sound and music');
     const sv=loadSaved();
     const notLive=!S.isCEO&&e.releaseAt&&Date.now()<e.releaseAt;
     const speedSel=S.isCEO?h('select',{style:'width:auto'},[[1,'Normal speed'],[4,'CEO preview ×4'],[8,'CEO preview ×8'],[16,'CEO preview ×16']].map(([v,l])=>h('option',{value:v},l))):null;
@@ -431,9 +811,10 @@ function pageWatch(id){
            h('div',{class:'row c'},
              sv?h('button',{class:'btn',onclick:()=>begin(sv)},'▶ Resume the show'):null,
              h('button',{class:sv?'btn alt':'btn',onclick:()=>begin(null)},sv?'Start over':'▶ Start the show'),
-             speedSel)],
+             speedSel),soundRow],
       h('div',{style:'margin-top:14px'},h('a',{href:'#event-'+id,class:'cond',style:'color:var(--muted)'},'← Back to the card'))));
     async function begin(resume){
+      sndUnlock();
       try{
         let view=resume&&resume.view, shown=resume?resume.shown||0:0, speed=resume?resume.speed||1:1;
         if(!resume){
@@ -451,11 +832,20 @@ function pageWatch(id){
     const fill=h('div',{class:'w-fill'});
     const pauseBtn=h('button',{class:'btn alt sm',type:'button',onclick:()=>{
       st.paused=!st.paused; pauseBtn.textContent=st.paused?'▶ Resume':'❚❚ Pause'; if(!st.paused) playNext(); }},'❚❚ Pause');
-    wrap.append(h('div',{class:'w-bar'},pauseBtn,h('div',{class:'w-prog'},fill),h('a',{href:'#event-'+id,class:'cond',style:'color:var(--on-navy)'},'Leave')),feed);
+    const muteBtn=h('button',{class:'btn alt sm',type:'button',title:'Sound on/off',style:'display:none',onclick:()=>{ SND.pref.on=!SND.pref.on; sndSave(); if(!SND.pref.on) sndStop(); drawMute(); }});
+    const volIn=h('input',{type:'range',min:'0',max:'100',value:Math.round(SND.pref.vol*100),title:'Volume',style:'width:80px;display:none',oninput:e=>{ SND.pref.vol=Number(e.target.value)/100; sndSave(); if(SND.music){ try{SND.music.volume=SND.pref.vol;}catch(_){} } }});
+    function drawMute(){ muteBtn.textContent=SND.pref.on?'🔊':'🔇'; }
+    drawMute(); sndLoad().then(()=>{ if(sndAny()){ muteBtn.style.display=''; volIn.style.display=''; } });
+    wrap.append(h('div',{class:'w-bar'},pauseBtn,h('div',{class:'w-prog'},fill),muteBtn,volIn,h('a',{href:'#event-'+id,class:'cond',style:'color:var(--on-navy)'},'Leave')),feed);
     const st={queue:[],received:0,shown:0,total:0,done:false,paused:false,busy:false,finished:false};
     const reduceMotion=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     // Returns how long (ms) the text should wait so the match entrance can play.
     function segHeader(sg,animate){
+      if(sg.type==='show_intro'){
+        const intro=!!animate&&!reduceMotion;
+        feed.append(h('div',{class:'w-seg w-intro'+(intro?' anim':'')},evImg(e,'intro-logo'),h('span',{class:'tag navy'},'Show Intro')));
+        return intro?Math.round(1600/speed):0;
+      }
       const sides=(sg.sides||[]).filter(x=>x.length);
       const k=1/speed, play=!!animate&&!reduceMotion&&sg.type==='match'&&sides.length>0;
       const mh=sg.type==='match'?matchHeader(sg.sides,play?{k}:null):null;
@@ -481,6 +871,7 @@ function pageWatch(id){
       const hold=b.seg?segHeader(b.seg,true):0;
       if(hold>0) follow(was);
       const runBeat=()=>{
+        sndBeat(b.cue||'');
         const was1=nearBottom();
         const p=h('p',{class:'w-beat'}); feed.append(p);
         follow(was1||was);
@@ -547,8 +938,153 @@ function pageCEO(){
   wrap.append(h('div',{class:'sect'},h('div',{class:'sect-h'},h('h2',{},'Roster Management'),h('div',{class:'sp'}),
     h('a',{class:'btn alt sm',href:'#edit-'+uid8()},'+ Add NPC / Guest Wrestler')),
     ws.length?h('div',{class:'tiles'},ws.map(superTile)):h('div',{class:'empty'},'No wrestlers have signed yet. Share the page with your players!')));
+  wrap.append(subInbox());
   wrap.append(h('div',{class:'hint',style:'margin-top:24px'},'Tip: to make another user a CEO, set is_admin = 1 on their row in the D1 users table (see the README).'));
   return wrap;
+}
+
+/* ----- Superstar Hub: player submissions ----- */
+const SUB_TYPES={promo:'Promo / Interview', backstage:'Backstage Segment', angle:'Angle / Brawl', other:'Other'};
+const MAX_OPEN_SUBS=3;
+function unseenSubs(){ return S.isCEO?(S.subs||[]).filter(x=>!x.seen).length:0; }
+function subStatusTag(x){
+  if(x.status==='used') return h('span',{class:'tag navy'},'Used'+(S.events[x.usedEvent]?' in '+(S.events[x.usedEvent].title||'a show'):''));
+  if(x.status==='approved') return h('span',{class:'tag navy'},'Approved');
+  if(x.status==='declined') return h('span',{class:'tag draft'},'Declined');
+  return h('span',{class:'tag'},x.seen?'Seen by the CEO':'Waiting');
+}
+function subDate(ms){ return new Date(ms).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }
+async function loadSubs(){ try{ S.subs=(await api('GET','/submissions')).submissions||[]; }catch(_){ S.subs=S.subs||[]; } }
+
+function pageHub(){
+  if(!S.user) return h('div',{class:'empty'},'Log in to open your Superstar Hub. ',h('a',{href:'#login',style:'color:var(--red2)'},'Log in'));
+  const me=S.wrestlers[S.uid];
+  if(!me) return h('div',{class:'empty'},'Create your wrestler first, then your Superstar Hub unlocks. ',h('a',{href:'#my-wrestler',style:'color:var(--red2)'},'Create wrestler'));
+  const wrap=h('div',{});
+  const listBox=h('div',{}), formBox=h('div',{});
+  const F={type:'promo',title:'',mode:'idea',body:'',involved:[],eventId:''}; let editId=null;
+  const mine=()=>(S.subs||[]).filter(x=>x.wrestlerId===S.uid);
+  const pendingN=()=>mine().filter(x=>x.status==='pending').length;
+  function drawForm(){
+    formBox.replaceChildren();
+    const full=!editId&&pendingN()>=MAX_OPEN_SUBS;
+    const evs=upcomingEvents();
+    const chips=h('div',{});
+    function drawChips(){
+      chips.replaceChildren(...F.involved.map((id,k)=>h('span',{class:'chip'},wname(id),h('button',{type:'button',title:'Remove',onclick:()=>{F.involved.splice(k,1);drawChips();}},'×'))),
+        h('select',{style:'width:auto',onchange:e=>{ if(e.target.value){ F.involved.push(e.target.value); drawChips(); } }},
+          h('option',{value:''},'+ Add another wrestler…'),
+          Object.entries(S.wrestlers).filter(([id])=>id!==S.uid&&!F.involved.includes(id)).sort((a,b)=>a[1].ringName.localeCompare(b[1].ringName)).map(([id,w])=>h('option',{value:id},w.ringName))));
+    }
+    drawChips();
+    const bodyIn=h('textarea',{rows:'8',maxlength:'4000',placeholder:F.mode==='idea'?'Describe what you’d like to happen: who is involved, what is said or done, how it fits your storyline…':'Write the exact text you want used: dialogue, narration, anything. The CEO may edit it.',oninput:e=>{F.body=e.target.value;}},F.body);
+    formBox.append(h('div',{class:'card'},
+      h('h3',{style:'margin:0 0 8px'},editId?'Edit your submission':'Pitch a segment'),
+      full?h('div',{class:'notice'},'You have '+MAX_OPEN_SUBS+' submissions waiting for the CEO. Wait for a response or withdraw one below before sending another.'):null,
+      h('div',{class:'cols'},
+        h('div',{class:'f'},h('label',{class:'l'},'Segment type'),h('select',{onchange:e=>{F.type=e.target.value;}},Object.entries(SUB_TYPES).map(([k,l])=>h('option',{value:k,selected:F.type===k},l)))),
+        h('div',{class:'f'},h('label',{class:'l'},'Title (optional)'),h('input',{type:'text',maxlength:'100',value:F.title,placeholder:'e.g. Calling out the champ',oninput:e=>{F.title=e.target.value;}})),
+        h('div',{class:'f'},h('label',{class:'l'},'This is'),h('select',{onchange:e=>{F.mode=e.target.value;bodyIn.placeholder=F.mode==='idea'?'Describe what you’d like to happen…':'Write the exact text you want used…';}},
+          h('option',{value:'idea',selected:F.mode==='idea'},'Just an idea'),h('option',{value:'text',selected:F.mode==='text'},'Actual text I want used'))),
+        h('div',{class:'f'},h('label',{class:'l'},'Preferred show (optional)'),h('select',{onchange:e=>{F.eventId=e.target.value;}},h('option',{value:''},'Any show'),evs.map(e=>h('option',{value:e.id,selected:F.eventId===e.id},(e.title||'Show')+' · '+fmtDate(e.date).replace(/^\w+, /,'').replace(/, \d{4}$/,'')))))),
+      h('div',{class:'f'},h('label',{class:'l'},'Others involved (optional)'),chips),
+      h('div',{class:'f'},h('label',{class:'l'},'Your idea or text'),bodyIn),
+      h('div',{class:'row'},
+        h('button',{class:'btn',type:'button',disabled:full,onclick:async()=>{
+          if(!F.body.trim()){ toast('Write your idea or text first.',true); return; }
+          const payload={type:F.type,title:F.title.trim(),mode:F.mode,body:F.body.trim(),involved:F.involved,eventId:F.eventId};
+          const ok=await safe(()=>editId?api('PUT','/submissions/'+editId,payload):api('POST','/submissions',payload),editId?'Changes saved.':'Sent to the CEO!');
+          if(ok){ Object.assign(F,{type:'promo',title:'',mode:'idea',body:'',involved:[],eventId:''}); editId=null; await loadSubs(); S.editing=false; drawAll(); }
+        }},editId?'Save changes':'Send to the CEO'),
+        editId?h('button',{class:'btn alt',type:'button',onclick:()=>{ Object.assign(F,{type:'promo',title:'',mode:'idea',body:'',involved:[],eventId:''}); editId=null; drawAll(); }},'Cancel edit'):null,
+        h('span',{class:'hint'},'The CEO decides what airs. Only you and the CEO can see your submissions.'))));
+  }
+  function drawList(){
+    listBox.replaceChildren(h('div',{class:'sect-h',style:'margin-top:24px'},h('h2',{},'My Submissions')));
+    const list=mine();
+    if(!list.length){ listBox.append(h('div',{class:'empty'},'Nothing submitted yet. Pitch your first segment above.')); return; }
+    list.forEach(x=>listBox.append(h('div',{class:'seg sub'},
+      h('div',{class:'seg-h'},h('span',{class:'tag navy'},SUB_TYPES[x.type]||'Segment'),h('span',{class:'tag'},x.mode==='text'?'Text':'Idea'),subStatusTag(x),h('span',{class:'hint'},subDate(x.createdAt))),
+      x.title?h('div',{class:'cond',style:'font-size:20px;font-weight:600;color:var(--blue)'},x.title):null,
+      x.involved.length?h('div',{class:'hint',style:'margin:2px 0'},'With '+x.involved.map(wname).join(', ')):null,
+      h('div',{class:'bio',style:'color:var(--text);margin-top:4px'},x.body),
+      x.note?h('div',{class:'sub-note'},h('b',{},'CEO: '),x.note):null,
+      x.status==='pending'?h('div',{class:'row',style:'margin-top:8px'},
+        h('button',{class:'btn alt sm',type:'button',onclick:()=>{ editId=x.id; Object.assign(F,{type:x.type,title:x.title,mode:x.mode,body:x.body,involved:x.involved.slice(),eventId:x.eventId}); S.editing=true; drawAll(); window.scrollTo({top:0,behavior:'smooth'}); }},'Edit'),
+        h('button',{class:'btn danger sm',type:'button',onclick:()=>confirmDlg('Withdraw this submission?','It will be removed.','Withdraw',async()=>{ if(await safe(()=>api('DELETE','/submissions/'+x.id),'Withdrawn.')){ await loadSubs(); drawAll(); } })},'Withdraw')):null)));
+  }
+  function drawAll(){ drawForm(); drawList(); }
+  wrap.append(h('div',{class:'sect-h'},h('h2',{},'Superstar Hub'),h('div',{class:'sp'}),h('span',{class:'tag draft'},'Private · '+me.ringName)),
+    h('div',{class:'hint',style:'margin:-6px 0 12px'},'Pitch promos, backstage scenes and other segments for your wrestler. Send a rough idea or the exact words you want. The CEO reads everything and decides what makes the show.'),
+    formBox,listBox);
+  drawAll();
+  loadSubs().then(()=>{ if(!editId) drawAll(); });
+  return wrap;
+}
+
+function subInbox(){
+  const box=h('div',{class:'sect'});
+  const fresh=new Set((S.subs||[]).filter(x=>!x.seen).map(x=>x.id));
+  let filter=fresh.size?'pending':'all';
+  const body=h('div',{});
+  const FILTERS=[['pending','Waiting'],['approved','Approved'],['all','All']];
+  const bar=h('div',{class:'row',style:'margin:0 0 10px'});
+  function draw(){
+    bar.replaceChildren(...FILTERS.map(([k,l])=>h('button',{type:'button',class:'fchip'+(filter===k?' on':''),onclick:()=>{filter=k;draw();}},l+' ('+(S.subs||[]).filter(x=>k==='all'||x.status===k).length+')')));
+    body.replaceChildren();
+    const list=(S.subs||[]).filter(x=>filter==='all'||x.status===filter);
+    if(!list.length){ body.append(h('div',{class:'empty'},filter==='pending'?'No submissions waiting.':'Nothing here.')); return; }
+    list.forEach(x=>{
+      const noteIn=h('input',{type:'text',style:'flex:1;min-width:200px',placeholder:'Reply to the player (optional)',value:x.note||''});
+      const act=(status,msg)=>async()=>{
+        if(await safe(()=>api('PUT','/submissions/'+x.id,{status,note:noteIn.value}),msg)){ await loadSubs(); renderNav(route()); draw(); }
+      };
+      const evSel=h('select',{style:'width:auto'},h('option',{value:''},'Add to a show…'),
+        Object.entries(S.events).map(([id,e])=>({id,...e})).filter(e=>(e.date||'')>=todayISO()).sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(e=>h('option',{value:e.id,selected:x.eventId===e.id},(e.title||'Show')+' · '+(e.date||''))));
+      body.append(h('div',{class:'seg sub'},
+        h('div',{class:'seg-h'},
+          fresh.has(x.id)?h('span',{class:'tag red'},'NEW'):null,
+          h('a',{href:'#wrestler-'+x.wrestlerId,style:'font-weight:700'},wname(x.wrestlerId)),
+          h('span',{class:'tag navy'},SUB_TYPES[x.type]||'Segment'),h('span',{class:'tag'},x.mode==='text'?'Actual text':'Idea'),subStatusTag(x),
+          S.events[x.eventId]?h('span',{class:'tag'},'Wants: '+(S.events[x.eventId].title||'a show')):null,
+          h('span',{class:'hint'},subDate(x.createdAt))),
+        x.title?h('div',{class:'cond',style:'font-size:20px;font-weight:600;color:var(--blue)'},x.title):null,
+        x.involved.length?h('div',{class:'hint',style:'margin:2px 0'},'With '+x.involved.map(wname).join(', ')):null,
+        h('div',{class:'bio',style:'color:var(--text);margin-top:4px'},x.body),
+        h('div',{class:'row',style:'margin-top:10px'},noteIn),
+        h('div',{class:'row',style:'margin-top:8px'},
+          x.status!=='used'?[
+            h('button',{class:'btn sm',type:'button',disabled:x.status==='approved',onclick:act('approved','Approved.')},'Approve'),
+            h('button',{class:'btn danger sm',type:'button',disabled:x.status==='declined',onclick:act('declined','Declined.')},'Decline'),
+            x.status==='approved'?h('button',{class:'btn alt sm',type:'button',onclick:act('pending','Moved back to waiting.')},'Back to waiting'):null,
+            x.status==='approved'&&x.mode==='text'?h('button',{class:'btn sm',type:'button',title:'Preview a cleaned-up version in the show’s style',onclick:()=>{
+              if(!evSel.value){toast('Pick a show first so the AI knows the card.',true);return;}
+              const ev=S.events[evSel.value]; if(!ev){return;}
+              const d=JSON.parse(JSON.stringify(ev)); S.polished=S.polished||{}; delete S.polished[x.id];
+              const seg0=segFromSub(x); d.segments=(d.segments||[]).map(z=>({beats:[],sides:[],...z})); d.segments.push(seg0);
+              polishDialog(d,d.segments.length-1,seg0.beats,nb=>{ S.polished[x.id]=nb.map(b=>b.text).join('\n\n'); toast('Polished version saved. Add to card will use it.'); draw(); });
+            }},S.polished&&S.polished[x.id]?'✨ Polished ✓':'✨ Polish with AI'):null,
+            evSel,
+            h('button',{class:'btn alt sm',type:'button',onclick:()=>{ if(!evSel.value){toast('Pick a show first.',true);return;} S.addSub=x.id; navTo('ceo-edit-'+evSel.value); }},'Add to card')
+          ]:h('span',{class:'hint'},'Already on a card.'),
+          note_save(x,noteIn))));
+    });
+  }
+  function note_save(x,noteIn){ return h('button',{class:'btn alt sm',type:'button',onclick:async()=>{ if(await safe(()=>api('PUT','/submissions/'+x.id,{status:x.status,note:noteIn.value}),'Reply saved.')){ await loadSubs(); draw(); } }},'Save reply'); }
+  box.append(h('div',{class:'sect-h'},h('h2',{},'Player Submissions'),h('div',{class:'sp'}),unseenSubs()?h('span',{class:'tag red'},unseenSubs()+' new'):null),bar,body);
+  draw();
+  if(fresh.size) api('POST','/submissions/seen',{ids:[...fresh]}).then(()=>{ (S.subs||[]).forEach(x=>{ if(fresh.has(x.id)) x.seen=true; }); renderNav(route()); }).catch(()=>{});
+  return box;
+}
+// Turn an approved submission into a segment in the event being edited.
+function segFromSub(x){
+  const paras=x.mode==='text'?((S.polished&&S.polished[x.id])||x.body).split(/\n\s*\n/).map(t=>t.trim()).filter(Boolean):[];
+  const beats=paras.map(t=>({text:t.slice(0,1200),pause:0,cue:''}));
+  const words=beats.reduce((n,b)=>n+wordCount(b.text),0);
+  const sides=[[x.wrestlerId,...x.involved].filter(w=>S.wrestlers[w])];
+  return {id:uid8(),type:x.type,title:x.title||'',stip:'',sub:x.id,
+    desc:x.mode==='idea'?'Player idea from '+wname(x.wrestlerId)+': '+x.body:'Text submitted by '+wname(x.wrestlerId)+' (edit as needed).',
+    sides,length:beats.length?Math.max(1,Math.min(30,Math.ceil(words/WORDS_PER_MIN))):defLength(x.type),beats,result:{winner:null,finish:''}};
 }
 
 /* ----- event editor ----- */
@@ -557,20 +1093,45 @@ function pageEditEvent(id){
   if(!S.isCEO) return h('div',{class:'empty'},'The CEO Office is for the CEO only.');
   if(id && !S.events[id]) return h('div',{class:'empty'},'Event not found.');
   const d=id?JSON.parse(JSON.stringify(S.events[id])):newEvent();
-  d.segments=(d.segments||[]).map(s=>({id:s.id||uid8(), type:s.type||'match', title:s.title||'', stip:s.stip||'', desc:s.desc||'', sides:(s.sides&&s.sides.length)?s.sides:[[],[]], length:Number(s.length)>=1?Number(s.length):defLength(s.type||'match'), beats:(s.beats||[]).map(b=>({text:b.text||'',pause:b.pause||0,cue:b.cue||''}))}));
+  d.segments=(d.segments||[]).map(s=>({id:s.id||uid8(), type:s.type||'match', title:s.title||'', stip:s.stip||'', desc:s.desc||'', sides:(s.sides&&s.sides.length)?s.sides:[[],[]], length:Number(s.length)>=1?Number(s.length):defLength(s.type||'match'), beats:(s.beats||[]).map(b=>({text:b.text||'',pause:b.pause||0,cue:b.cue||''})), result:{winner:(s.result&&Number.isInteger(s.result.winner))?s.result.winner:null,finish:(s.result&&s.result.finish)||''}, sub:s.sub||''}));
   S.draft=d; S.editing=true;
   const segBox=h('div',{});
+  const subsBox=h('div',{});
   const titleField=field('title','Show title');
   function field(k,label,type,ph){ return h('div',{class:'f'},h('label',{class:'l'},label),h('input',{type:type||'text',value:d[k]||'',placeholder:ph||'',oninput:e=>{d[k]=e.target.value;}})); }
   function drawSegs(){
     segBox.replaceChildren();
     if(!d.segments.length) segBox.append(h('div',{class:'empty'},'No segments yet. Add a match, promo, or backstage scene below.'));
     d.segments.forEach((s,i)=>segBox.append(segEditor(s,i)));
-    updateTotal();
+    updateTotal(); drawSubs();
+  }
+  function drawSubs(){
+    subsBox.replaceChildren();
+    const list=(S.subs||[]).filter(x=>x.status==='approved'&&!d.segments.some(s=>s.sub===x.id));
+    if(!list.length) return;
+    subsBox.append(h('div',{class:'sect-h',style:'margin-top:26px'},h('h2',{},'Approved Player Submissions'),h('div',{class:'sp'}),h('span',{class:'tag navy'},list.length)),
+      h('div',{class:'hint',style:'margin:-6px 0 12px'},'Add one to the card as a segment. Text submissions become script beats; ideas go in “What happens”, so Draft with AI can build on them.'),
+      ...list.map(x=>h('div',{class:'seg sub'},
+        h('div',{class:'seg-h'},h('b',{},wname(x.wrestlerId)),h('span',{class:'tag navy'},SUB_TYPES[x.type]||'Segment'),h('span',{class:'tag'},x.mode==='text'?'Actual text':'Idea'),x.title?h('span',{class:'cond'},x.title):null),
+        h('div',{class:'bio',style:'color:var(--text)'},x.body.length>400?x.body.slice(0,400)+'…':x.body),
+        h('div',{class:'row',style:'margin-top:8px'},h('button',{class:'btn sm',type:'button',onclick:()=>{ d.segments.push(segFromSub(x)); drawSegs(); toast('Added to the card.'); }},'+ Add to card')))));
   }
   function segEditor(s,i){
     const isMatch=s.type==='match';
     const sidesBox=h('div',{});
+    const resultBox=h('div',{class:'f',style:'margin-top:10px'});
+    function drawResult(){
+      if(!isMatch) return;
+      s.result=s.result||{winner:null,finish:''};
+      if(Number.isInteger(s.result.winner)&&s.result.winner>=s.sides.length) s.result.winner=null;
+      resultBox.replaceChildren(h('label',{class:'l'},'Result (CEO only — the AI follows it; never shown publicly)'),
+        h('div',{class:'row'},
+          h('div',{style:'min-width:220px'},h('select',{onchange:e=>{ const v=e.target.value; s.result.winner=v===''?null:v==='draw'?-1:Number(v); }},
+            h('option',{value:''},'— not decided —'),
+            s.sides.map((side,si)=>side.length?h('option',{value:String(si),selected:s.result.winner===si},andList(side.map(wname))+' win'):null),
+            h('option',{value:'draw',selected:s.result.winner===-1},'Draw / no contest'))),
+          h('input',{type:'text',style:'flex:1;min-width:200px',placeholder:'Finish (optional), e.g. pinfall after the Hammond Slam',value:s.result.finish||'',oninput:e=>{s.result.finish=e.target.value;}})));
+    }
     function drawSides(){
       sidesBox.replaceChildren();
       if(!isMatch && s.sides.length>1) s.sides=[s.sides.flat()];
@@ -585,24 +1146,28 @@ function pageEditEvent(id){
           picker));
       });
       if(isMatch) sidesBox.append(h('button',{type:'button',class:'btn alt sm',onclick:()=>{s.sides.push([]);drawSides();}},'+ Add another side (triple threat, fatal 4-way…)'));
+      drawResult();
     }
-    const typeSel=h('select',{onchange:e=>{ s.type=e.target.value; if(s.type!=='match') s.sides=[s.sides.flat()]; else if(s.sides.length<2) s.sides.push([]); drawSegs(); }},
-      Object.entries(SEG_TYPES).map(([k,l])=>h('option',{value:k,selected:s.type===k},l)));
+    const isIntro=s.type==='show_intro';
+    const typeSel=h('select',{disabled:isIntro,onchange:e=>{ s.type=e.target.value; if(s.type!=='match') s.sides=[s.sides.flat()]; else if(s.sides.length<2) s.sides.push([]); drawSegs(); }},
+      Object.entries(SEG_TYPES).filter(([k])=>k!=='show_intro'||isIntro).map(([k,l])=>h('option',{value:k,selected:s.type===k},l)));
     const el=h('div',{class:'seg '+s.type},
       h('div',{class:'row',style:'margin-bottom:10px'},
         h('span',{class:'cond',style:'font-weight:700;color:var(--muted)'},'#'+(i+1)),
         h('div',{style:'width:230px'},typeSel),
         isMatch?null:h('span',{class:'tag draft'},'Hidden from public'),
         h('div',{style:'flex:1'}),
-        h('button',{type:'button',class:'btn alt sm',disabled:i===0,onclick:()=>{[d.segments[i-1],d.segments[i]]=[d.segments[i],d.segments[i-1]];drawSegs();}},'↑'),
-        h('button',{type:'button',class:'btn alt sm',disabled:i===d.segments.length-1,onclick:()=>{[d.segments[i+1],d.segments[i]]=[d.segments[i],d.segments[i+1]];drawSegs();}},'↓'),
+        h('button',{type:'button',class:'btn alt sm',disabled:i===0||isIntro||d.segments[i-1].type==='show_intro',onclick:()=>{[d.segments[i-1],d.segments[i]]=[d.segments[i],d.segments[i-1]];drawSegs();}},'↑'),
+        h('button',{type:'button',class:'btn alt sm',disabled:isIntro||i===d.segments.length-1,onclick:()=>{[d.segments[i+1],d.segments[i]]=[d.segments[i],d.segments[i+1]];drawSegs();}},'↓'),
         h('button',{type:'button',class:'btn danger sm',onclick:()=>{d.segments.splice(i,1);drawSegs();}},'Remove')),
       h('div',{class:'cols'},
         h('div',{class:'f'},h('label',{class:'l'},isMatch?'Match title (optional)':'Segment title'),h('input',{type:'text',value:s.title,placeholder:isMatch?'e.g. USCW Championship':'e.g. Contract signing',oninput:e=>{s.title=e.target.value;}})),
         isMatch?h('div',{class:'f'},h('label',{class:'l'},'Stipulation'),h('input',{type:'text',value:s.stip,placeholder:'e.g. Steel Cage, No DQ, 30-min Iron Man',oninput:e=>{s.stip=e.target.value;}})):null),
       sidesBox,
-      h('div',{class:'f',style:'margin-top:10px'},h('label',{class:'l'},isMatch?'Notes / storyline':'What happens'),h('textarea',{placeholder:isMatch?'Build-up, rivalry, what\'s at stake…':'Describe the in-ring or backstage event…',oninput:e=>{s.desc=e.target.value;}},s.desc)));
+      h('div',{class:'f',style:'margin-top:10px'},h('label',{class:'l'},isMatch?'Notes / storyline':'What happens'),h('textarea',{placeholder:isMatch?'Build-up, rivalry, what\'s at stake…':'Describe the in-ring or backstage event…',oninput:e=>{s.desc=e.target.value;}},s.desc)),
+      isMatch?resultBox:null);
     drawSides();
+    if(isIntro) el.replaceChildren(el.firstChild);
     // ---- length + script ----
     const isPreset=()=>LENGTHS.some(l=>l[0]===s.length);
     const customIn=h('input',{type:'number',min:'1',max:'30',style:'width:80px',value:s.length,oninput:e=>{ s.length=Math.max(1,Math.min(30,Math.round(Number(e.target.value))||1)); updateScript(); updateTotal(); }});
@@ -611,12 +1176,31 @@ function pageEditEvent(id){
       else { s.length=Number(e.target.value); customWrap.style.display='none'; customIn.value=s.length; updateScript(); updateTotal(); }
     }}, LENGTHS.map(l=>h('option',{value:l[0],selected:s.length===l[0]},l[1])), h('option',{value:'custom',selected:!isPreset()},'Custom…'));
     const customWrap=h('span',{style:'display:'+(isPreset()?'none':'')},customIn,' minutes');
+    const aiLabel=isIntro?'✨ Polish with AI':'✨ Draft with AI';
+    const aiBtn=h('button',{type:'button',class:'btn sm',title:'Gemini writes this segment from the wrestlers’ profiles, storylines and the rest of the card'});
+    aiBtn.textContent=aiLabel;
+    const aiGo=async()=>{
+      const idx=d.segments.indexOf(s);
+      aiBtn.disabled=true; aiBtn.textContent='Writing…';
+      try{ const r=await aiRun(d,idx); drawSegs(); toast('Draft ready'+(r.fellBack?' (written by the backup model)':'')+'. Review and edit each beat, then save the show.'); }
+      catch(e){ toast((e&&e.message)||'The AI writer failed.',true); aiBtn.disabled=false; aiBtn.textContent=aiLabel; }
+    };
+    aiBtn.addEventListener('click',()=>{
+      if(isMatch&&!Number.isInteger(s.result&&s.result.winner)){ toast('Pick the match result first. The AI follows it.',true); return; }
+      if(!isIntro&&s.beats.some(b=>(b.text||'').trim())) confirmDlg('Replace the text?','The AI draft replaces the beats below. Any edits you made to them will be lost.','Replace',aiGo); else aiGo();
+    });
+    const polishBtn=(s.sub&&!isMatch&&!isIntro)?h('button',{type:'button',class:'btn sm',title:'Gemini cleans up the player’s text so it matches the rest of the show',onclick:()=>{
+      const idx=d.segments.indexOf(s);
+      if(!s.beats.some(b=>(b.text||'').trim())){ toast('There is no text to polish yet.',true); return; }
+      polishDialog(d,idx,s.beats,nb=>{ s.beats=nb; drawSegs(); toast('Polished text applied. Review it, then save the show.'); });
+    }},'✨ Polish with AI'):null;
     const beatsBox=h('div',{});
     const scriptInfo=h('span',{class:'hint'});
     function updateScript(){
       const words=s.beats.reduce((n,b)=>n+wordCount(b.text),0), target=s.length*WORDS_PER_MIN;
       scriptInfo.textContent=s.beats.length+' beat'+(s.beats.length===1?'':'s')+' · '+words+' words · target about '+target+' words for '+s.length+' min';
     }
+    const grow=t=>{ t.style.height='auto'; if(t.scrollHeight>t.clientHeight) t.style.height=(t.scrollHeight+4)+'px'; };
     function drawBeats(){
       beatsBox.replaceChildren();
       s.beats.forEach((b,bi)=>{
@@ -630,19 +1214,32 @@ function pageEditEvent(id){
           h('div',{class:'row',style:'margin-bottom:6px'},
             h('span',{class:'cond',style:'font-weight:700;color:var(--muted)'},'Beat '+(bi+1)),
             cueSel, wsel,
+            h('button',{class:'btn alt sm',type:'button',title:'Play this sound (silent if its file has not been added yet)',onclick:async()=>{
+              await sndLoad(); sndUnlock();
+              if(!b.cue){ toast('Pick a sound first.',true); return; }
+              if(!sndPlay(b.cue,true)) toast('No sound file for this one yet. See docs/audio/README.md.',true);
+            }},'▶ Test'),
             h('label',{class:'hint',style:'display:flex;gap:6px;align-items:center'},'Pause after',h('input',{type:'number',min:'0',max:'30',value:b.pause||0,style:'width:64px',oninput:e=>{ b.pause=Math.max(0,Math.min(30,Math.round(Number(e.target.value))||0)); }}),'sec'),
             h('div',{style:'flex:1'}),
             h('button',{type:'button',class:'btn alt sm',disabled:bi===0,onclick:()=>{[s.beats[bi-1],s.beats[bi]]=[s.beats[bi],s.beats[bi-1]];drawBeats();}},'↑'),
             h('button',{type:'button',class:'btn alt sm',disabled:bi===s.beats.length-1,onclick:()=>{[s.beats[bi+1],s.beats[bi]]=[s.beats[bi],s.beats[bi+1]];drawBeats();}},'↓'),
             h('button',{type:'button',class:'btn danger sm',onclick:()=>{s.beats.splice(bi,1);drawBeats();updateScript();}},'×')),
-          h('textarea',{maxlength:'1200',placeholder:'A few sentences of the action…',oninput:e=>{ b.text=e.target.value; updateScript(); }},b.text)));
+          (()=>{ const ta=h('textarea',{maxlength:'1200',placeholder:'A few sentences of the action…',oninput:e=>{ b.text=e.target.value; grow(ta); updateScript(); }},b.text); requestAnimationFrame(()=>grow(ta)); return ta; })()));
       });
       updateScript();
     }
     drawBeats();
+    if(isIntro){
+      const doDraft=()=>{ const r=draftIntro(d); s.beats=r.beats; s.length=r.length; drawSegs(); toast('Intro drafted. Review and edit each beat, then save the show.'); };
+      el.append(h('div',{class:'intro-note'},
+        h('p',{},'The show opens with the '+((d.ple&&/./.test(d.title||''))?'show':'Monday Night Mayhem')+' logo, then the crowd pans, the theme music plays and Mike Johnson welcomes the audience and runs down the night. Build the rest of the card first, then draft this so the rundown matches it.'),
+        h('div',{class:'row'},
+          h('button',{type:'button',class:'btn sm',onclick:()=>{ if(s.beats.some(b=>(b.text||'').trim())) confirmDlg('Redraft the intro?','This replaces the beats below with a fresh draft. Any edits you made to them will be lost.','Redraft',doDraft); else doDraft(); }},'✎ Draft Intro'),
+          h('span',{class:'hint'},'Uses the matches, stakes, appearances and each wrestler’s storyline. You can edit everything afterwards.'))));
+    }
     el.append(h('div',{class:'script'},
       h('div',{class:'row',style:'margin-bottom:8px'},
-        h('span',{class:'cond',style:'font-weight:700;color:var(--navy)'},'Length'), lenSel, customWrap,
+        h('span',{class:'cond',style:'font-weight:700;color:var(--navy)'},'Length'), lenSel, customWrap, aiBtn, polishBtn,
         h('div',{style:'flex:1'}), scriptInfo),
       h('div',{class:'hint',style:'margin:0 0 8px'},'Script: the text viewers are shown a few beats at a time when they watch the show. Sound cues play when a beat appears.'),
       beatsBox,
@@ -654,14 +1251,19 @@ function pageEditEvent(id){
   drawSegs();
   const addBtns=h('div',{class:'row',style:'margin:10px 0 20px'},
     h('span',{class:'cond',style:'color:var(--muted)'},'Add:'),
-    Object.entries(SEG_TYPES).map(([k,l])=>h('button',{type:'button',class:'btn alt sm',onclick:()=>{d.segments.push({id:uid8(),type:k,title:'',stip:'',desc:'',sides:k==='match'?[[],[]]:[[]],length:defLength(k),beats:[]});drawSegs();}},'+ '+l)));
+    Object.entries(SEG_TYPES).map(([k,l])=>h('button',{type:'button',class:'btn alt sm',onclick:()=>{ const seg={id:uid8(),type:k,title:'',stip:'',desc:'',sides:k==='match'?[[],[]]:[[]],length:defLength(k),beats:[],result:{winner:null,finish:''}};
+      if(k==='show_intro'){ if(d.segments.some(x=>x.type==='show_intro')){toast('This show already has a Show Intro.',true);return;} d.segments.unshift(seg); } else d.segments.push(seg); drawSegs(); }},'+ '+l)));
+  if(S.addSub){
+    const x=(S.subs||[]).find(y=>y.id===S.addSub); S.addSub=null;
+    if(x&&x.status!=='used'&&!d.segments.some(sg=>sg.sub===x.id)){ d.segments.push(segFromSub(x)); drawSegs(); toast('Submission added to the card.'); }
+  }
   async function save(publish){
     if(!d.title.trim()){ toast('Give the show a title.',true); return; }
     if(!d.date){ toast('Pick a date for the show.',true); return; }
     const evId=id||('e'+Date.now().toString(36)+Math.random().toString(36).slice(2,5));
     const data={title:d.title.trim(), date:d.date, time:d.time||'', tz:(d.tz||'').trim(), venue:(d.venue||'').trim(), city:(d.city||'').trim(), notes:(d.notes||'').trim(),
       published: publish===null ? !!d.published : publish, ple: !!d.ple,
-      segments:d.segments.map(s=>({id:s.id,type:s.type,title:s.title.trim(),stip:s.type==='match'?s.stip.trim():'',desc:s.desc.trim(),sides:s.sides.map(x=>x.filter(w=>S.wrestlers[w])),length:Number(s.length)||defLength(s.type),beats:(s.beats||[]).filter(b=>(b.text||'').trim()||b.cue).map(b=>({text:(b.text||'').trim(),pause:b.pause||0,cue:b.cue||''}))})),
+      segments:d.segments.map(s=>({id:s.id,type:s.type,title:s.title.trim(),stip:s.type==='match'?s.stip.trim():'',desc:s.desc.trim(),sides:s.sides.map(x=>x.filter(w=>S.wrestlers[w])),length:Number(s.length)||defLength(s.type),beats:(s.beats||[]).filter(b=>(b.text||'').trim()||b.cue).map(b=>({text:(b.text||'').trim(),pause:b.pause||0,cue:b.cue||''})),result:s.type==='match'?{winner:Number.isInteger(s.result&&s.result.winner)?s.result.winner:null,finish:((s.result&&s.result.finish)||'').trim()}:null,sub:s.sub||''})),
       updatedAt:Date.now()};
     const ok=await safe(()=>S.db.doc('events/'+evId).set(data), publish===true?'Show published!':'Event saved.');
     if(ok){ S.editing=false; navTo(publish===true||data.published?'event-'+evId:'ceo'); }
@@ -682,7 +1284,10 @@ function pageEditEvent(id){
       h('div',{class:'f'},h('label',{class:'l'},'Show notes / theme'),h('textarea',{placeholder:'Special announcements, theme of the night, etc.',oninput:e=>{d.notes=e.target.value;}},d.notes||''))),
     h('div',{class:'sect-h',style:'margin-top:26px'},h('h2',{},'Show Card'),h('div',{class:'sp'}),totalEl),
     h('div',{class:'hint',style:'margin:-6px 0 12px'},'Everything in the order it happens. Only matches appear on the public card — promos, interviews, backstage scenes and other segments are CEO-only surprises. The last match is billed as the main event.'),
-    segBox, addBtns,
+    h('div',{class:'row',style:'margin-bottom:12px'},
+      h('button',{class:'btn',type:'button',onclick:()=>wholeCardDialog(d,drawSegs)},'✨ Draft whole card with AI'),
+      h('span',{class:'hint'},'Writes every segment you tick, in order, so you mostly just review and edit.')),
+    segBox, addBtns, subsBox,
     h('div',{class:'row'},
       h('button',{class:'btn',type:'button',onclick:()=>save(true)},d.published?'Save & Keep Published':'Save & Publish'),
       h('button',{class:'btn alt',type:'button',onclick:()=>save(d.published?null:false)},d.published?'Save Changes':'Save as Draft'),
@@ -786,6 +1391,7 @@ function render(keep){
     case 'reset': el=pageReset(r.id); break;
     case 'verify': el=pageVerify(r.id); break;
     case 'ceo': el=pageCEO(); break;
+    case 'hub': el=pageHub(); break;
     case 'ceo-new-event': el=pageEditEvent(null); break;
     case 'ceo-edit': el=pageEditEvent(r.id); break;
     default: el=pageHome();
@@ -818,7 +1424,7 @@ async function api(method, path, body){
   return data;
 }
 function setUser(u){ S.user={id:u.id,email:u.email,isAdmin:!!u.isAdmin}; S.uid=u.id; S.isCEO=!!u.isAdmin; S.canWrite=true; }
-function clearAuth(){ S.token=null; S.user=null; S.uid=null; S.isCEO=false; S.canWrite=false; try{localStorage.removeItem(TOKEN_KEY);}catch(e){} }
+function clearAuth(){ S.subs=[]; S.polished={}; S.token=null; S.user=null; S.uid=null; S.isCEO=false; S.canWrite=false; try{localStorage.removeItem(TOKEN_KEY);}catch(e){} }
 async function doLogout(){
   try{ await api('POST','/logout',{}); }catch(e){}
   clearAuth(); await loadAll().catch(()=>{});
@@ -831,6 +1437,7 @@ async function loadAll(){
   w.wrestlers.forEach(x=>{wm[x.id]=x;}); e.events.forEach(x=>{em[x.id]=x;});
   const sig = JSON.stringify([wm,em,c.championships]);
   const changed = sig!==S.sig;
+  if(S.isCEO){ try{ S.story=(await api('GET','/story')).stories||{}; }catch(_){} await loadSubs(); } else S.story={};
   S.sig=sig; S.wrestlers=wm; S.events=em; S.champs=c.championships||[]; S.loadedW=S.loadedE=true; S.failed=false;
   return changed;
 }

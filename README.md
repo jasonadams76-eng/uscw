@@ -117,6 +117,11 @@ npx serve docs -p 8080               # http://localhost:8080
 | `PUT/DELETE /api/events/:id` | CEO | build and remove shows, including each segment's length and script beats |
 | `POST /api/events/:id/watch` | anyone, once the show's start time has passed (CEO: any time) | a viewer presses Start; returns a `view` id. The CEO may send `speed` (1–20) to preview a show faster |
 | `GET /api/events/:id/script?view=…&after=N` | the viewer who started it | the script beats whose time has come, with their segment headers. Nothing is ever sent ahead of the viewer's own clock |
+| `GET /api/story`, `PUT /api/story/:id` | CEO only | each wrestler's recent results, feuds and show notes (stored in the `wrestler_story` table, created automatically). Never sent to anyone but the CEO |
+| `POST /api/ai/draft` | CEO only | write a segment, polish the intro, via Gemini (see the AI writer section) |
+| `GET/POST /api/submissions` | signed in | Superstar Hub: a player lists/creates their own pitches (max 3 pending); the CEO sees all |
+| `PUT/DELETE /api/submissions/:id` | owner (pending only) / CEO | edit or withdraw; the CEO sets status and reply note |
+| `POST /api/submissions/seen` | CEO only | clear the unseen badge |
 | `GET /api/championships` | anyone | the three titles and their champions |
 | `PUT /api/championships/:id` | CEO | award or vacate a title (`holders`, `since`, `wonAt`) |
 
@@ -140,6 +145,34 @@ Each segment can carry a script of beats (text, optional pause, optional sound c
 moment. The CEO can preview a show at ×4–×16 speed from the Start screen. The show's start time uses its time zone field
 (ET, CT, MT, PT or a name like `America/Chicago`; blank means Eastern). Viewing records live in a small `show_views` table
 that the Worker creates by itself and clears after 3 days.
+
+## Show Intro and storylines
+
+- A show can have one **Show Intro** segment. It is always the first segment, CEO-only, and opens with the show logo, the crowd pan, the `intro_music` cue and announcer Mike Johnson's welcome and card rundown.
+- In the show editor, **Draft Intro** writes the beats from the card: matches with their stipulations and titles, wrestlers appearing in promos or other segments, and each wrestler's storyline. Review and edit, then save.
+- Storylines live on each wrestler's profile (CEO only): recent results, current feuds and show notes. Write a show note so it continues the wrestler's name, for example "was attacked backstage by X". Upcoming matches are not entered by hand; they come from the published cards.
+- Gemini (a later step) will receive the same data package and polish the text.
+
+## AI writer (Gemini)
+
+- Set the Worker **secret** `GEMINI_API_KEY` (Cloudflare dashboard, Settings, Variables and Secrets, type Secret). The key never reaches the browser.
+- The CEO's **Draft with AI** (each segment), **Polish with AI** (Show Intro) and **Draft whole card with AI** buttons call `POST /api/ai/draft`.
+- Two models: `gemini-3.8-flash` for the intro, non-match segments and the main event (about 20 free requests a day) and `gemini-3.5-flash-lite` for other matches (about 500 a day). The ids are constants at the top of the AI section in `worker/src/index.js`; set the variables `GEMINI_MODEL_MAIN` / `GEMINI_MODEL_LITE` to override without editing code. If the main model is out of quota or its name is wrong, the Worker retries with Flash-Lite.
+- Announcers are fixed in the system instruction: Mike Johnson (serious play-by-play) and Earl Backwater (heel sympathizer). Only ring names, bios, moves, storylines and card details are sent to Google, never real names or accounts.
+- A match's **Result** (winner and finish) is saved with the show but is CEO-only: it is stripped from the public event output.
+- Draft whole card writes ticked segments in order with a 7-second pause between calls (free-tier rate limit).
+
+## Superstar Hub
+- Each player with a wrestler gets a private **My Hub** page to pitch segments (an idea, or exact text), up to 3 waiting at once.
+- The CEO sees them under **CEO Office → Player Submissions**, with a red badge on the nav for unseen ones. Approve, decline, or reply with a note.
+- In the show editor, approved pitches appear in a panel: **+ Add to card** turns text into script beats, or an idea into the segment's "What happens" brief for the AI. Saving the show marks the pitch "used".
+- **✨ Polish with AI** (CEO only) appears on approved exact-text pitches, in the inbox (preview, then "Add to card" uses the polished text) and on the segment in the show editor. It keeps the player's content and results, and restyles it for the show. You see the original beside the polished text and choose **Use polished**, **Redraft** or **Keep original**.
+
+## Show cast
+The AI writer knows the whole on-air cast: Mike Johnson (play-by-play) and Earl Backwater (color) commentate; Cindy Maxwell (ring announcer) introduces competitors and announces winners; Paul Sandler and Jackie O'Sullivan (interviewers) run promos and backstage segments; Jason Adams (Owner & CEO) appears in ceremonies and authority angles. The list lives in `AI_SYSTEM` in `worker/src/index.js`.
+
+## Sound
+Sound is fully optional. Put files in `docs/audio/` and list them in `docs/audio/sounds.json` (see `docs/audio/README.md`). A cue with no file stays silent, and with an empty manifest the watch page shows no sound controls. Show cues, per-wrestler entrance themes (by wrestler id) and a default entrance theme are supported. Viewers get a sound checkbox on the start screen plus a mute button and volume slider while watching. The show editor has a **▶ Test** button on each beat.
 
 ## Update notice
 
