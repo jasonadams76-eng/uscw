@@ -169,6 +169,25 @@ function superTile(w){
       w.nickname?h('div',{class:'tile-nick'},'“'+w.nickname+'”'):null));
 }
 
+// A small wrestler card, used as the header over each match.
+function miniCard(id){
+  const w=S.wrestlers[id];
+  if(!w) return h('div',{class:'tile mini Tweener unknown'},h('div',{class:'tile-bg'}),h('div',{class:'tile-txt'},h('div',{class:'tile-name'},'TBA')));
+  const bg=h('div',{class:'tile-bg'});
+  if(w.image) bg.style.backgroundImage='url("'+String(w.image).replace(/"/g,'%22')+'")';
+  return h('a',{href:'#wrestler-'+id,class:'tile mini '+(w.alignment||'Tweener'),title:w.ringName},
+    bg,
+    champsOf(id).length?h('span',{class:'tile-champ'},'★ Champ'):null,
+    h('div',{class:'tile-txt'},h('div',{class:'tile-name'},w.ringName)));
+}
+function matchHeader(sides){
+  const real=(sides||[]).filter(x=>x&&x.length);
+  if(!real.length) return null;
+  const out=[];
+  real.forEach((side,i)=>{ if(i>0) out.push(h('div',{class:'mh-vs'},'VS')); out.push(h('div',{class:'mh-side'},side.map(miniCard))); });
+  return h('div',{class:'mh'},out);
+}
+
 function pageSuperstars(){
   const wrap=h('div',{});
   const ws=Object.entries(S.wrestlers).map(([id,w])=>({id,...w})).sort((a,b)=>a.ringName.localeCompare(b.ringName));
@@ -332,13 +351,14 @@ function pageEvent(e){
   const all=e.segments||[];
   const segs=all.filter(s=>s.type==='match');
   const segLine=(s,i,isMain,hidden)=>h('div',{class:'seg '+s.type},
+      s.type==='match'?matchHeader(s.sides):null,
       h('div',{class:'seg-h'},
         h('span',{class:'tag '+(s.type==='match'?'navy':'')},SEG_TYPES[s.type]||'Segment'),
         isMain?h('span',{class:'tag red'},'Main Event'):null,
         hidden?h('span',{class:'tag draft'},'Hidden from public'):null,
         s.stip?h('span',{class:'tag'},s.stip):null),
       s.title?h('div',{class:'cond',style:'font-size:20px;font-weight:600;color:var(--blue)'},s.title):null,
-      (s.sides||[]).some(x=>x.length)?h('div',{class:'vs'},sidesLine(s.type==='match'?s.sides.filter(x=>x.length):[(s.sides||[]).flat()])):null,
+      s.type!=='match'&&(s.sides||[]).some(x=>x.length)?h('div',{class:'vs'},sidesLine([(s.sides||[]).flat()])):null,
       s.desc?h('div',{class:'bio',style:'color:var(--text);margin-top:4px'},s.desc):null);
   wrap.append(h('div',{class:'sect-h'},h('h2',{},'The Card')));
   if(!segs.length) wrap.append(h('div',{class:'empty'},'The card has not been announced yet.'));
@@ -414,10 +434,11 @@ function pageWatch(id){
     function segHeader(sg){
       const sides=(sg.sides||[]).filter(x=>x.length);
       feed.append(h('div',{class:'w-seg'},
+        sg.type==='match'?matchHeader(sg.sides):null,
         h('span',{class:'tag '+(sg.type==='match'?'red':'navy')},SEG_TYPES[sg.type]||'Segment'),
         sg.title?h('div',{class:'cond w-title'},sg.title):null,
         sg.stip?h('div',{class:'w-stip'},sg.stip):null,
-        sides.length?h('div',{class:'vs'},sidesLine(sg.type==='match'?sides:[sides.flat()])):null));
+        sg.type!=='match'&&sides.length?h('div',{class:'vs'},sidesLine([sides.flat()])):null));
     }
     function nearBottom(){ return window.innerHeight+window.scrollY>=document.body.scrollHeight-160; }
     function follow(was){ if(was) window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}); }

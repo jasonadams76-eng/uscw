@@ -217,3 +217,15 @@ textarea{min-height:90px;resize:vertical}
 @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media(max-width:600px){.w-beat{font-size:18px}.watch-start h2{font-size:32px}}
 @media(max-width:600px){header.top{position:static}.w-bar{top:0}}
+
+/* ----- match header cards ----- */
+.mh{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:2px 0 12px}
+.mh-side{display:flex;gap:8px}
+.mh-vs{font-family:'Bebas Neue',Impact,sans-serif;font-size:30px;font-style:italic;color:var(--red);letter-spacing:.05em}
+.tile.mini{width:132px;flex:0 0 auto;border-radius:6px}
+.tile.mini:hover{transform:translateY(-2px)}
+.mini .tile-bg::after{font-size:96px;right:-10px;top:-14px}
+.mini .tile-txt{padding:8px 8px 10px}
+.mini .tile-name{font-size:21px;text-shadow:0 1px 0 rgba(0,0,0,.4)}
+.mini .tile-champ{font-size:11px;top:6px;left:6px;padding:1px 6px}
+@media(max-width:600px){.tile.mini{width:104px}.mini .tile-txt{padding:6px 6px 8px}.mini .tile-name{font-size:16px}.mh{gap:8px}.mh-vs{font-size:24px}}
