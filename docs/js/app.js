@@ -93,10 +93,10 @@ function navTo(hash){ if(location.hash==='#'+hash) render(); else location.hash=
 
 function renderNav(r){
   const nav=$('#nav'); nav.replaceChildren();
-  const items=[['home','Home'],['mayhem','Mayhem'],['champions','Champions'],['ples','PLE Calendar'],['roster','Roster']];
+  const items=[['home','Home'],['mayhem','Mayhem'],['superstars','Superstars'],['ples','PLE Calendar']];
   if (S.user) items.push(['my-wrestler', S.wrestlers[S.uid] ? 'My Wrestler' : 'Create Wrestler']);
   if (S.isCEO) items.push(['ceo','CEO Office']);
-  const active = r.name==='wrestler'?'roster': r.name==='event'?((S.events[r.id]&&S.events[r.id].ple)?'ples':'mayhem'): (r.name==='ceo-new-event'||r.name==='ceo-edit')?'ceo': (r.name==='edit'&&r.id===S.uid)?'my-wrestler': r.name;
+  const active = r.name==='wrestler'?'superstars': r.name==='event'?((S.events[r.id]&&S.events[r.id].ple)?'ples':'mayhem'): (r.name==='ceo-new-event'||r.name==='ceo-edit')?'ceo': (r.name==='edit'&&r.id===S.uid)?'my-wrestler': r.name;
   items.forEach(([k,l])=>nav.append(h('a',{href:'#'+k,class:active===k?'on':''},l)));
   if (S.user) nav.append(h('a',{href:'#home',onclick:e=>{e.preventDefault();doLogout();}},'Log out'));
   else { nav.append(h('a',{href:'#login',class:active==='login'?'on':''},'Log in')); nav.append(h('a',{href:'#register',class:active==='register'?'on':''},'Sign up')); }
@@ -114,7 +114,7 @@ function pageHome(){
     h('p',{},'Create your wrestler. Build your legend. Step through the curtain on Monday Night Mayhem.'),
     h('div',{class:'row c'},
       h('a',{class:'btn',href:S.user?'#my-wrestler':'#register'}, S.user?(me?'Edit My Wrestler':'Create Your Wrestler'):'Join USCW'),
-      h('a',{class:'btn alt',href:'#roster'},'View the Roster'),
+      h('a',{class:'btn alt',href:'#superstars'},'Meet the Superstars'),
       h('a',{class:'btn alt',href:'#mayhem'},'Monday Night Mayhem'))));
   wrap.append(h('div',{class:'sect'},
     h('div',{class:'sect-h'},h('h2',{},'Next Monday Night Mayhem')),
@@ -124,13 +124,13 @@ function pageHome(){
     eventTeaser(nextPle)));
   const champs=S.champs.filter(c=>c.holders.some(id=>S.wrestlers[id]));
   if (champs.length) wrap.append(h('div',{class:'sect'},
-    h('div',{class:'sect-h'},h('h2',{},'Reigning Champions'),h('div',{class:'sp'}),h('a',{href:'#champions',class:'cond'},'All titles →')),
+    h('div',{class:'sect-h'},h('h2',{},'Reigning Champions'),h('div',{class:'sp'}),h('a',{href:'#superstars',class:'cond'},'All titles →')),
     champs.map(c=>champCard(c,true))));
   const ws=Object.entries(S.wrestlers).map(([id,w])=>({id,...w}));
   if (ws.length){
     wrap.append(h('div',{class:'sect'},
-      h('div',{class:'sect-h'},h('h2',{},'Roster Spotlight'),h('div',{class:'sp'}),h('a',{href:'#roster',class:'cond'},'Full roster →')),
-      h('div',{class:'grid'}, ws.slice(0,6).map(wrestlerCard))));
+      h('div',{class:'sect-h'},h('h2',{},'Superstars'),h('div',{class:'sp'}),h('a',{href:'#superstars',class:'cond'},'All superstars →')),
+      h('div',{class:'tiles'}, ws.slice(0,6).map(superTile))));
   }
   return wrap;
 }
@@ -144,44 +144,53 @@ function eventTeaser(e){
     matches.length ? h('div',{style:'margin-top:10px;color:var(--text)'}, matches.length+' match'+(matches.length>1?'es':'')+' announced · see the full card →') : null);
 }
 
-function wrestlerCard(w){
-  return h('a',{href:'#wrestler-'+w.id,class:'wcard '+(w.alignment||'')},
-    h('h3',{},w.ringName),
-    w.nickname ? h('div',{class:'nick'},'“'+w.nickname+'”') : null,
-    h('div',{class:'meta'},[w.hometown, [w.height,w.weight&&(w.weight+' lbs')].filter(Boolean).join(' · ')].filter(Boolean).join(' — ')),
-    h('div',{style:'margin-top:8px'}, w.alignment?h('span',{class:'tag '+w.alignment},w.alignment):null,
-      champsOf(w.id).length?[' ',h('span',{class:'tag red'},'★ Champion')]:null));
+function superTile(w){
+  const isChamp=champsOf(w.id).length>0;
+  const bg=h('div',{class:'tile-bg'});
+  if(w.image) bg.style.backgroundImage='url("'+String(w.image).replace(/"/g,'%22')+'")';
+  return h('a',{href:'#wrestler-'+w.id,class:'tile '+(w.alignment||'Tweener')},
+    bg,
+    isChamp?h('span',{class:'tile-champ'},'★ Champion'):null,
+    h('div',{class:'tile-txt'},
+      h('div',{class:'tile-name'},w.ringName),
+      w.nickname?h('div',{class:'tile-nick'},'“'+w.nickname+'”'):null));
 }
 
-function pageRoster(){
+function pageSuperstars(){
   const wrap=h('div',{});
   const ws=Object.entries(S.wrestlers).map(([id,w])=>({id,...w})).sort((a,b)=>a.ringName.localeCompare(b.ringName));
-  const gridBox=h('div',{class:'grid'});
-  let q='', al='';
+  wrap.append(h('div',{class:'sect-h'},h('h2',{},'Champions')));
+  if(!S.champs.length) wrap.append(h('div',{class:'empty'},'The championships haven’t been set up yet.'));
+  S.champs.forEach(c=>wrap.append(champCard(c)));
+  wrap.append(h('div',{class:'sect-h',style:'margin-top:30px'},h('h2',{},'Superstars'),h('span',{class:'cond',style:'color:var(--muted)'},ws.length+' competitor'+(ws.length===1?'':'s'))));
+  let q='', f='All';
+  const chips=h('div',{class:'chips'});
+  const gridBox=h('div',{class:'tiles'});
+  const emptyBox=h('div',{class:'empty'}, ws.length?'No superstars match your search.':'The locker room is empty. Be the first to sign a contract!');
   function draw(){
-    gridBox.replaceChildren();
-    const list=ws.filter(w=>(!al||w.alignment===al)&&(!q||(w.ringName+' '+(w.nickname||'')+' '+(w.hometown||'')).toLowerCase().includes(q)));
-    if(!list.length) gridBox.replaceWith(emptyBox); else { if(emptyBox.parentNode) emptyBox.replaceWith(gridBox); list.forEach(w=>gridBox.append(wrestlerCard(w))); }
+    chips.replaceChildren();
+    ['All','Face','Heel','Tweener','Champions'].forEach(k=>chips.append(h('button',{type:'button',class:'chip'+(f===k?' on':''),onclick:()=>{f=k;draw();}},k)));
+    const list=ws.filter(w=>(f==='All'||(f==='Champions'?champsOf(w.id).length>0:w.alignment===f))&&(!q||(w.ringName+' '+(w.nickname||'')+' '+(w.hometown||'')).toLowerCase().includes(q)));
+    gridBox.replaceChildren(); emptyBox.remove();
+    if(list.length){ gridBox.style.display=''; list.forEach(w=>gridBox.append(superTile(w))); }
+    else { gridBox.style.display='none'; gridBox.after(emptyBox); }
   }
-  const emptyBox=h('div',{class:'empty'}, ws.length?'No wrestlers match your search.':'The locker room is empty. Be the first to sign a contract!');
-  wrap.append(h('div',{class:'sect-h'},h('h2',{},'USCW Roster'),h('span',{class:'cond',style:'color:var(--muted)'},ws.length+' competitor'+(ws.length===1?'':'s'))));
-  wrap.append(h('div',{class:'row',style:'margin-bottom:16px'},
+  wrap.append(h('div',{class:'row',style:'margin-bottom:14px'},
     h('input',{type:'text',placeholder:'Search name, nickname or hometown…',style:'max-width:340px',oninput:e=>{q=e.target.value.toLowerCase();draw();}}),
-    h('select',{style:'max-width:160px',onchange:e=>{al=e.target.value;draw();}},
-      h('option',{value:''},'All alignments'),['Face','Heel','Tweener'].map(a=>h('option',{value:a},a)))));
+    chips));
   wrap.append(gridBox); draw();
   return wrap;
 }
 
 function pageWrestler(id){
   const w=S.wrestlers[id];
-  if(!w) return h('div',{class:'empty'},'That wrestler could not be found. ',h('a',{href:'#roster',style:'color:var(--red2)'},'Back to the roster'));
+  if(!w) return h('div',{class:'empty'},'That wrestler could not be found. ',h('a',{href:'#superstars',style:'color:var(--red2)'},'Back to the superstars'));
   const wrap=h('div',{});
   wrap.append(h('div',{class:'row',style:'margin-bottom:10px'},
-    h('a',{href:'#roster',class:'cond',style:'color:var(--muted)'},'← Roster'),
+    h('a',{href:'#superstars',class:'cond',style:'color:var(--muted)'},'← Superstars'),
     h('div',{style:'flex:1'}),
     canEditW(id)?h('a',{class:'btn sm',href:'#edit-'+id},'Edit'):null,
-    S.isCEO?h('button',{class:'btn danger sm',onclick:()=>confirmDlg('Release '+w.ringName+'?','This permanently removes the wrestler from the roster.','Release',()=>safe(async()=>{await S.db.doc('wrestlers/'+id).delete(); navTo('roster');},'Wrestler released.'))},'Release'):null));
+    S.isCEO?h('button',{class:'btn danger sm',onclick:()=>confirmDlg('Release '+w.ringName+'?','This permanently removes the wrestler from the roster.','Release',()=>safe(async()=>{await S.db.doc('wrestlers/'+id).delete(); navTo('superstars');},'Wrestler released.'))},'Release'):null));
   wrap.append(h('div',{class:'profile-top'},
     h('div',{},
       w.alignment?h('span',{class:'tag '+w.alignment},w.alignment):null,' ',
@@ -354,7 +363,7 @@ function pageCEO(){
   const ws=Object.entries(S.wrestlers).map(([id,w])=>({id,...w}));
   wrap.append(h('div',{class:'sect'},h('div',{class:'sect-h'},h('h2',{},'Roster Management'),h('div',{class:'sp'}),
     h('a',{class:'btn alt sm',href:'#edit-'+uid8()},'+ Add NPC / Guest Wrestler')),
-    ws.length?h('div',{class:'grid'},ws.map(wrestlerCard)):h('div',{class:'empty'},'No wrestlers have signed yet. Share the page with your players!')));
+    ws.length?h('div',{class:'tiles'},ws.map(superTile)):h('div',{class:'empty'},'No wrestlers have signed yet. Share the page with your players!')));
   wrap.append(h('div',{class:'hint',style:'margin-top:24px'},'Tip: to make another user a CEO, set is_admin = 1 on their row in the D1 users table (see the README).'));
   return wrap;
 }
@@ -467,13 +476,6 @@ function champCard(c,readOnly){
       holders.length&&meta?h('div',{class:'champ-meta'},meta):null,
       S.isCEO&&!readOnly?h('div',{style:'margin-top:10px'},h('button',{class:'btn alt sm',onclick:()=>editChampion(c)},holders.length?'Change champion':'Award title')):null));
 }
-function pageChampions(){
-  const wrap=h('div',{});
-  wrap.append(h('div',{class:'sect-h'},h('h2',{},'Champions')));
-  if(!S.champs.length) wrap.append(h('div',{class:'empty'},'The championships haven’t been set up yet.'));
-  S.champs.forEach(c=>wrap.append(champCard(c)));
-  return wrap;
-}
 function editChampion(c){
   const roster=Object.entries(S.wrestlers).map(([id,w])=>({id,name:w.ringName})).sort((a,b)=>a.name.localeCompare(b.name));
   const count=c.kind==='tag'?2:1;
@@ -540,9 +542,8 @@ function render(keep){
   let el;
   switch(r.name){
     case 'mayhem': el=pageMayhem(); break;
-    case 'champions': el=pageChampions(); break;
+    case 'superstars': el=pageSuperstars(); break;
     case 'ples': el=pagePLE(); break;
-    case 'roster': el=pageRoster(); break;
     case 'wrestler': el=pageWrestler(r.id); break;
     case 'event': { const e=S.events[r.id]; el=(e&&(e.published||S.isCEO))?pageEvent(e):pageEvent(null); break; }
     case 'my-wrestler': el=pageEditWrestler(S.uid, !S.wrestlers[S.uid]); break;

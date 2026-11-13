@@ -3,7 +3,7 @@
 A fictional pro-wrestling league game. Players sign up, create a wrestler (bio, move list, finisher), and the
 CEO books **Monday Night Mayhem** and the monthly **Premium Live Events (PLEs)**: dates, venues, match cards,
 promos and backstage segments. The CEO also awards the three championships (World Heavyweight, United States
-Heavyweight, World Tag Team), shown on the Champions page and as badges on wrestler bios.
+Heavyweight, World Tag Team), shown at the top of the Superstars page and as badges on wrestler bios.
 
 ```
 docs/     Static front-end (plain HTML/CSS/JS, no build step) -> GitHub Pages
