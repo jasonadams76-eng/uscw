@@ -23,6 +23,9 @@ const S = {
   wrestlers:{}, events:{}, champs:[], loadedW:false, loadedE:false, failed:false, editing:false, draft:null
 };
 
+const pleLogo=i=>'img/ple/ple-'+String(i+1).padStart(2,'0')+'.webp';
+const pleIdx=e=>(e&&e.ple&&e.date)?Number(e.date.slice(5,7))-1:-1;
+const pleImg=(i,cls,name)=>(i>=0&&i<12)?h('img',{class:cls,src:pleLogo(i),alt:name||'',loading:'lazy'}):null;
 const PLE_MONTHS = [
   ['January',"New Year's Ball"],['February',"St. Valentine's Day Massacre"],['March','March Madness'],['April','Rage in the Cage'],
   ['May','Memphis in May'],['June','Summer Spectacular'],['July','Beach Bash'],['August','Clash of the Titans'],
@@ -138,11 +141,14 @@ function pageHome(){
 function eventTeaser(e){
   const matches=(e.segments||[]).filter(s=>s.type==='match');
   return h('a',{href:'#event-'+e.id,class:'card',style:'display:block;text-decoration:none'},
-    e.ple?h('span',{class:'tag red',style:'margin-bottom:6px'},'Premium Live Event'):null,
-    h('h2',{style:'font-size:38px'},e.title||'Monday Night Mayhem'),
-    h('div',{class:'cond',style:'color:var(--blue);font-size:18px'},fmtDate(e.date)+(e.time?' · '+fmtTime(e.time)+(e.tz?' '+e.tz:''):'')),
-    h('div',{style:'color:var(--muted)'},[e.venue,e.city].filter(Boolean).join(' — ')),
-    matches.length ? h('div',{style:'margin-top:10px;color:var(--text)'}, matches.length+' match'+(matches.length>1?'es':'')+' announced · see the full card →') : null);
+    h('div',{class:'teaser'},
+      pleImg(pleIdx(e),'teaser-logo',e.title),
+      h('div',{},
+        e.ple?h('span',{class:'tag red',style:'margin-bottom:6px'},'Premium Live Event'):null,
+        h('h2',{style:'font-size:38px'},e.title||'Monday Night Mayhem'),
+        h('div',{class:'cond',style:'color:var(--blue);font-size:18px'},fmtDate(e.date)+(e.time?' · '+fmtTime(e.time)+(e.tz?' '+e.tz:''):'')),
+        h('div',{style:'color:var(--muted)'},[e.venue,e.city].filter(Boolean).join(' — ')),
+        matches.length ? h('div',{style:'margin-top:10px;color:var(--text)'}, matches.length+' match'+(matches.length>1?'es':'')+' announced · see the full card →') : null)));
 }
 
 function superTile(w){
@@ -304,6 +310,7 @@ function pageEvent(e){
   if(!e) return h('div',{class:'empty'},'Show not found.');
   if(!e.published) wrap.append(h('div',{class:'notice'},'DRAFT — only the CEO can see this. Publish it from the CEO Office to put it on the public schedule.'));
   wrap.append(h('div',{class:'show-banner'},
+    pleImg(pleIdx(e),'banner-logo',e.title),
     h('div',{class:'cond',style:'color:var(--star);font-weight:700'},'United States Championship Wrestling presents'),
     e.ple?h('div',{style:'margin:6px 0'},h('span',{class:'tag red'},'Premium Live Event')):null,
     h('h1',{},e.title||'Monday Night Mayhem'),
@@ -517,7 +524,7 @@ function pagePLE(){
     const ev=booked.find(e=>Number((e.date||'').slice(5,7))-1===i);
     const title=ev&&ev.title&&ev.title!==name?ev.title:name;
     wrap.append(h('div',{class:'ple'+(i===nowM?' now':'')},
-      h('div',{class:'ple-month cond'},month),
+      h('div',{class:'ple-art'},pleImg(i,'ple-logo',name),h('div',{class:'ple-month cond'},month)),
       h('div',{},
         h('div',{class:'ple-name'},title),
         ev?h('div',{class:'ple-sub'},[fmtDate(ev.date).replace(/^\w+, /,''),ev.time?fmtTime(ev.time)+(ev.tz?' '+ev.tz:''):'',[ev.venue,ev.city].filter(Boolean).join(', ')].filter(Boolean).join(' · ')):h('div',{class:'ple-sub'},'Date and card to be announced'),
