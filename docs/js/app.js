@@ -25,6 +25,7 @@ const S = {
 
 const pleLogo=i=>'img/ple/ple-'+String(i+1).padStart(2,'0')+'.webp';
 const pleIdx=e=>(e&&e.ple&&e.date)?Number(e.date.slice(5,7))-1:-1;
+const evImg=(e,cls)=>{ if(!e) return null; const i=pleIdx(e); return i>=0?pleImg(i,cls,e.title):h('img',{class:cls+' mayhem-logo',src:'img/mayhem.webp',alt:e.title||'Monday Night Mayhem',loading:'lazy'}); };
 const pleImg=(i,cls,name)=>(i>=0&&i<12)?h('img',{class:cls,src:pleLogo(i),alt:name||'',loading:'lazy'}):null;
 const PLE_MONTHS = [
   ['January',"New Year's Ball"],['February',"St. Valentine's Day Massacre"],['March','March Madness'],['April','Rage in the Cage'],
@@ -142,7 +143,7 @@ function eventTeaser(e){
   const matches=(e.segments||[]).filter(s=>s.type==='match');
   return h('a',{href:'#event-'+e.id,class:'card',style:'display:block;text-decoration:none'},
     h('div',{class:'teaser'},
-      pleImg(pleIdx(e),'teaser-logo',e.title),
+      evImg(e,'teaser-logo'),
       h('div',{},
         e.ple?h('span',{class:'tag red',style:'margin-bottom:6px'},'Premium Live Event'):null,
         h('h2',{style:'font-size:38px'},e.title||'Monday Night Mayhem'),
@@ -310,7 +311,7 @@ function pageEvent(e){
   if(!e) return h('div',{class:'empty'},'Show not found.');
   if(!e.published) wrap.append(h('div',{class:'notice'},'DRAFT — only the CEO can see this. Publish it from the CEO Office to put it on the public schedule.'));
   wrap.append(h('div',{class:'show-banner'},
-    pleImg(pleIdx(e),'banner-logo',e.title),
+    evImg(e,'banner-logo'),
     h('div',{class:'cond',style:'color:var(--star);font-weight:700'},'United States Championship Wrestling presents'),
     e.ple?h('div',{style:'margin:6px 0'},h('span',{class:'tag red'},'Premium Live Event')):null,
     h('h1',{},e.title||'Monday Night Mayhem'),
