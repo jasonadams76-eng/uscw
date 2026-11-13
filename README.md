@@ -113,8 +113,8 @@ npx serve docs -p 8080               # http://localhost:8080
 | `GET /api/wrestlers[/:id]` | anyone | roster and bios |
 | `PUT /api/wrestlers/:id` | owner or CEO | create/edit (player id = own user id). Every application field is required (400 with a message naming the first missing one), including at least one move in each of the five move categories |
 | `DELETE /api/wrestlers/:id` | CEO | release a wrestler (any title they hold becomes vacant) |
-| `GET /api/events[/:id]` | anyone (drafts: CEO only) | Monday Night Mayhem shows and PLEs (`ple: true`). Non-CEO callers receive only `match` segments; promos, backstage and other segments are CEO-only surprises |
-| `PUT/DELETE /api/events/:id` | CEO | build and remove shows |
+| `GET /api/events[/:id]` | anyone (drafts: CEO only) | Monday Night Mayhem shows and PLEs (`ple: true`). Non-CEO callers receive only `match` segments; promos, backstage and other segments are CEO-only surprises. Each segment has a `length` in minutes (1–30) and a CEO-only `beats` script (text, pause, sound cue); the public sees only `length` and `scripted` |
+| `PUT/DELETE /api/events/:id` | CEO | build and remove shows, including each segment's length and script beats |
 | `GET /api/championships` | anyone | the three titles and their champions |
 | `PUT /api/championships/:id` | CEO | award or vacate a title (`holders`, `since`, `wonAt`) |
 

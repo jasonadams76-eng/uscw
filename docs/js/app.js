@@ -32,6 +32,11 @@ const PLE_MONTHS = [
   ['May','Memphis in May'],['June','Summer Spectacular'],['July','Beach Bash'],['August','Clash of the Titans'],
   ['September','Annihilation'],['October','Halloween Horror'],['November','Rumble in the Jungle'],['December','Holiday Havoc']
 ];
+const CUES = [['','No sound'],['bell','Bell'],['crowd_pop','Crowd pop'],['crowd_boo','Crowd boos'],['crowd_chant','Crowd chant'],['mat_slam','Slam on the mat'],['pin_count','Pin count'],['chair_shot','Chair shot'],['entrance','Entrance theme…']];
+const LENGTHS = [[1,'Short · 1 min'],[3,'Medium · 3 min'],[6,'Long · 6 min'],[10,'Epic · 10 min']];
+const WORDS_PER_MIN = 150;
+const defLength = type => type==='match'?6:3;
+const wordCount = t => (String(t||'').trim().match(/\S+/g)||[]).length;
 const SEG_TYPES = {match:'Match', promo:'Promo / Interview', backstage:'Backstage Segment', angle:'Angle / Brawl', ceremony:'Ceremony / Announcement', other:'Other'};
 const MOVE_CATS = [
   ['strikes','Strikes & Kicks'],
@@ -177,7 +182,7 @@ function pageSuperstars(){
   const emptyBox=h('div',{class:'empty'}, ws.length?'No superstars match your search.':'The locker room is empty. Be the first to sign a contract!');
   function draw(){
     chips.replaceChildren();
-    ['All','Face','Heel','Tweener','Champions'].forEach(k=>chips.append(h('button',{type:'button',class:'chip'+(f===k?' on':''),onclick:()=>{f=k;draw();}},k)));
+    ['All','Face','Heel','Tweener','Champions'].forEach(k=>chips.append(h('button',{type:'button',class:'fchip'+(f===k?' on':''),onclick:()=>{f=k;draw();}},k)));
     const list=ws.filter(w=>(f==='All'||(f==='Champions'?champsOf(w.id).length>0:w.alignment===f))&&(!q||(w.ringName+' '+(w.nickname||'')+' '+(w.hometown||'')).toLowerCase().includes(q)));
     gridBox.replaceChildren(); emptyBox.remove();
     if(list.length){ gridBox.style.display=''; list.forEach(w=>gridBox.append(superTile(w))); }
@@ -383,7 +388,7 @@ function pageEditEvent(id){
   if(!S.isCEO) return h('div',{class:'empty'},'The CEO Office is for the CEO only.');
   if(id && !S.events[id]) return h('div',{class:'empty'},'Event not found.');
   const d=id?JSON.parse(JSON.stringify(S.events[id])):newEvent();
-  d.segments=(d.segments||[]).map(s=>({id:s.id||uid8(), type:s.type||'match', title:s.title||'', stip:s.stip||'', desc:s.desc||'', sides:(s.sides&&s.sides.length)?s.sides:[[],[]]}));
+  d.segments=(d.segments||[]).map(s=>({id:s.id||uid8(), type:s.type||'match', title:s.title||'', stip:s.stip||'', desc:s.desc||'', sides:(s.sides&&s.sides.length)?s.sides:[[],[]], length:Number(s.length)>=1?Number(s.length):defLength(s.type||'match'), beats:(s.beats||[]).map(b=>({text:b.text||'',pause:b.pause||0,cue:b.cue||''}))}));
   S.draft=d; S.editing=true;
   const segBox=h('div',{});
   const titleField=field('title','Show title');
@@ -392,6 +397,7 @@ function pageEditEvent(id){
     segBox.replaceChildren();
     if(!d.segments.length) segBox.append(h('div',{class:'empty'},'No segments yet. Add a match, promo, or backstage scene below.'));
     d.segments.forEach((s,i)=>segBox.append(segEditor(s,i)));
+    updateTotal();
   }
   function segEditor(s,i){
     const isMatch=s.type==='match';
@@ -428,19 +434,65 @@ function pageEditEvent(id){
       sidesBox,
       h('div',{class:'f',style:'margin-top:10px'},h('label',{class:'l'},isMatch?'Notes / storyline':'What happens'),h('textarea',{placeholder:isMatch?'Build-up, rivalry, what\'s at stake…':'Describe the in-ring or backstage event…',oninput:e=>{s.desc=e.target.value;}},s.desc)));
     drawSides();
+    // ---- length + script ----
+    const isPreset=()=>LENGTHS.some(l=>l[0]===s.length);
+    const customIn=h('input',{type:'number',min:'1',max:'30',style:'width:80px',value:s.length,oninput:e=>{ s.length=Math.max(1,Math.min(30,Math.round(Number(e.target.value))||1)); updateScript(); updateTotal(); }});
+    const lenSel=h('select',{style:'width:auto',onchange:e=>{
+      if(e.target.value==='custom'){ customWrap.style.display=''; }
+      else { s.length=Number(e.target.value); customWrap.style.display='none'; customIn.value=s.length; updateScript(); updateTotal(); }
+    }}, LENGTHS.map(l=>h('option',{value:l[0],selected:s.length===l[0]},l[1])), h('option',{value:'custom',selected:!isPreset()},'Custom…'));
+    const customWrap=h('span',{style:'display:'+(isPreset()?'none':'')},customIn,' minutes');
+    const beatsBox=h('div',{});
+    const scriptInfo=h('span',{class:'hint'});
+    function updateScript(){
+      const words=s.beats.reduce((n,b)=>n+wordCount(b.text),0), target=s.length*WORDS_PER_MIN;
+      scriptInfo.textContent=s.beats.length+' beat'+(s.beats.length===1?'':'s')+' · '+words+' words · target about '+target+' words for '+s.length+' min';
+    }
+    function drawBeats(){
+      beatsBox.replaceChildren();
+      s.beats.forEach((b,bi)=>{
+        const cueBase=b.cue.startsWith('entrance:')?'entrance':b.cue;
+        const wsel=h('select',{style:'width:auto;display:'+(cueBase==='entrance'?'':'none'),onchange:e=>{ b.cue=e.target.value?'entrance:'+e.target.value:'entrance'; }},
+          h('option',{value:''},'— whose entrance? —'),
+          Object.entries(S.wrestlers).sort((a,c)=>a[1].ringName.localeCompare(c[1].ringName)).map(([wid,w])=>h('option',{value:wid,selected:b.cue==='entrance:'+wid},w.ringName)));
+        const cueSel=h('select',{style:'width:auto',onchange:e=>{ b.cue=e.target.value; wsel.style.display=b.cue==='entrance'?'':'none'; }},
+          CUES.map(([k,l])=>h('option',{value:k,selected:cueBase===k},l)));
+        beatsBox.append(h('div',{class:'beat'},
+          h('div',{class:'row',style:'margin-bottom:6px'},
+            h('span',{class:'cond',style:'font-weight:700;color:var(--muted)'},'Beat '+(bi+1)),
+            cueSel, wsel,
+            h('label',{class:'hint',style:'display:flex;gap:6px;align-items:center'},'Pause after',h('input',{type:'number',min:'0',max:'30',value:b.pause||0,style:'width:64px',oninput:e=>{ b.pause=Math.max(0,Math.min(30,Math.round(Number(e.target.value))||0)); }}),'sec'),
+            h('div',{style:'flex:1'}),
+            h('button',{type:'button',class:'btn alt sm',disabled:bi===0,onclick:()=>{[s.beats[bi-1],s.beats[bi]]=[s.beats[bi],s.beats[bi-1]];drawBeats();}},'↑'),
+            h('button',{type:'button',class:'btn alt sm',disabled:bi===s.beats.length-1,onclick:()=>{[s.beats[bi+1],s.beats[bi]]=[s.beats[bi],s.beats[bi+1]];drawBeats();}},'↓'),
+            h('button',{type:'button',class:'btn danger sm',onclick:()=>{s.beats.splice(bi,1);drawBeats();updateScript();}},'×')),
+          h('textarea',{maxlength:'1200',placeholder:'A few sentences of the action…',oninput:e=>{ b.text=e.target.value; updateScript(); }},b.text)));
+      });
+      updateScript();
+    }
+    drawBeats();
+    el.append(h('div',{class:'script'},
+      h('div',{class:'row',style:'margin-bottom:8px'},
+        h('span',{class:'cond',style:'font-weight:700;color:var(--navy)'},'Length'), lenSel, customWrap,
+        h('div',{style:'flex:1'}), scriptInfo),
+      h('div',{class:'hint',style:'margin:0 0 8px'},'Script: the text viewers are shown a few beats at a time when they watch the show. Sound cues play when a beat appears.'),
+      beatsBox,
+      h('button',{type:'button',class:'btn alt sm',onclick:()=>{s.beats.push({text:'',pause:0,cue:''});drawBeats();}},'+ Add beat')));
     return el;
   }
+  const totalEl=h('span',{class:'cond',style:'color:var(--muted)'});
+  function updateTotal(){ const m=d.segments.reduce((n,x)=>n+(Number(x.length)||0),0); totalEl.textContent='Show length: about '+m+' min'+(m>=60?' ('+Math.floor(m/60)+' h '+(m%60)+' min)':''); }
   drawSegs();
   const addBtns=h('div',{class:'row',style:'margin:10px 0 20px'},
     h('span',{class:'cond',style:'color:var(--muted)'},'Add:'),
-    Object.entries(SEG_TYPES).map(([k,l])=>h('button',{type:'button',class:'btn alt sm',onclick:()=>{d.segments.push({id:uid8(),type:k,title:'',stip:'',desc:'',sides:k==='match'?[[],[]]:[[]]});drawSegs();}},'+ '+l)));
+    Object.entries(SEG_TYPES).map(([k,l])=>h('button',{type:'button',class:'btn alt sm',onclick:()=>{d.segments.push({id:uid8(),type:k,title:'',stip:'',desc:'',sides:k==='match'?[[],[]]:[[]],length:defLength(k),beats:[]});drawSegs();}},'+ '+l)));
   async function save(publish){
     if(!d.title.trim()){ toast('Give the show a title.',true); return; }
     if(!d.date){ toast('Pick a date for the show.',true); return; }
     const evId=id||('e'+Date.now().toString(36)+Math.random().toString(36).slice(2,5));
     const data={title:d.title.trim(), date:d.date, time:d.time||'', tz:(d.tz||'').trim(), venue:(d.venue||'').trim(), city:(d.city||'').trim(), notes:(d.notes||'').trim(),
       published: publish===null ? !!d.published : publish, ple: !!d.ple,
-      segments:d.segments.map(s=>({id:s.id,type:s.type,title:s.title.trim(),stip:s.type==='match'?s.stip.trim():'',desc:s.desc.trim(),sides:s.sides.map(x=>x.filter(w=>S.wrestlers[w]))})),
+      segments:d.segments.map(s=>({id:s.id,type:s.type,title:s.title.trim(),stip:s.type==='match'?s.stip.trim():'',desc:s.desc.trim(),sides:s.sides.map(x=>x.filter(w=>S.wrestlers[w])),length:Number(s.length)||defLength(s.type),beats:(s.beats||[]).filter(b=>(b.text||'').trim()||b.cue).map(b=>({text:(b.text||'').trim(),pause:b.pause||0,cue:b.cue||''}))})),
       updatedAt:Date.now()};
     const ok=await safe(()=>S.db.doc('events/'+evId).set(data), publish===true?'Show published!':'Event saved.');
     if(ok){ S.editing=false; navTo(publish===true||data.published?'event-'+evId:'ceo'); }
@@ -459,7 +511,7 @@ function pageEditEvent(id){
         }}),
         h('span',{},'This is a Premium Live Event (PLE)'))),
       h('div',{class:'f'},h('label',{class:'l'},'Show notes / theme'),h('textarea',{placeholder:'Special announcements, theme of the night, etc.',oninput:e=>{d.notes=e.target.value;}},d.notes||''))),
-    h('div',{class:'sect-h',style:'margin-top:26px'},h('h2',{},'Show Card')),
+    h('div',{class:'sect-h',style:'margin-top:26px'},h('h2',{},'Show Card'),h('div',{class:'sp'}),totalEl),
     h('div',{class:'hint',style:'margin:-6px 0 12px'},'Everything in the order it happens. Only matches appear on the public card — promos, interviews, backstage scenes and other segments are CEO-only surprises. The last match is billed as the main event.'),
     segBox, addBtns,
     h('div',{class:'row'},

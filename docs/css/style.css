@@ -174,8 +174,8 @@ textarea{min-height:90px;resize:vertical}
 .tile-nick{font-family:'Barlow Condensed',sans-serif;font-style:italic;font-size:16px;margin-top:6px;opacity:.92}
 .tile-champ{position:absolute;top:10px;left:10px;z-index:1;background:#fff;color:var(--red2);font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:13px;padding:2px 8px;border-radius:3px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
-.chip{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.08em;font-weight:600;font-size:15px;padding:6px 14px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--navy);cursor:pointer}
-.chip.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.fchip{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.08em;font-weight:600;font-size:15px;padding:6px 14px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--navy);cursor:pointer}
+.fchip.on{background:var(--navy);border-color:var(--navy);color:#fff}
 @media (max-width:560px){.tiles{grid-template-columns:repeat(2,1fr);gap:10px}.tile-name{font-size:26px}}
 
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -191,3 +191,8 @@ textarea{min-height:90px;resize:vertical}
 .banner-logo{display:block;width:min(300px,100%);height:auto;aspect-ratio:388/218;object-fit:cover;border-radius:10px;margin:0 0 14px;box-shadow:0 4px 14px rgba(0,0,0,.35)}
 @media(max-width:600px){.ple-logo{max-width:320px}.teaser{flex-direction:column;align-items:flex-start}.teaser-logo{width:100%;max-width:320px}}
 .mayhem-logo{aspect-ratio:auto!important;object-fit:contain!important}
+
+/* ----- CEO script editor ----- */
+.script{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.beat{background:var(--blue-bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
+.beat textarea{min-height:70px}

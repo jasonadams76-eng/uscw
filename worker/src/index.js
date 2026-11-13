@@ -397,6 +397,22 @@ async function wrestlerRoutes(request, env, id) {
 
 /* ---------------- events ---------------- */
 const SEG_TYPES = ['match', 'promo', 'backstage', 'angle', 'ceremony', 'other'];
+// Sound cues the show script may trigger (the audio files themselves are added later).
+const CUE_RE = /^(bell|crowd_pop|crowd_boo|crowd_chant|mat_slam|pin_count|chair_shot|entrance:[A-Za-z0-9_-]{1,40})$/;
+const MAX_BEATS = 120, MAX_BEAT_CHARS = 1200, MAX_SCRIPT_CHARS = 150000;
+const cleanLength = (v, type) => {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 1 ? Math.min(30, n) : (type === 'match' ? 6 : 3);
+};
+const cleanBeats = beats => (Array.isArray(beats) ? beats : []).slice(0, MAX_BEATS).map(b => {
+  b = b && typeof b === 'object' ? b : {};
+  const pause = Math.round(Number(b.pause));
+  return {
+    text: str(b.text, MAX_BEAT_CHARS),
+    pause: Number.isFinite(pause) ? Math.max(0, Math.min(30, pause)) : 0,
+    cue: typeof b.cue === 'string' && CUE_RE.test(b.cue) ? b.cue : ''
+  };
+}).filter(b => b.text || b.cue);
 
 function cleanEvent(b) {
   const title = str(b.title, 100);
@@ -412,9 +428,13 @@ function cleanEvent(b) {
     return {
       id: typeof s.id === 'string' && ID_RE.test(s.id) ? s.id : randHex(6),
       type: SEG_TYPES.includes(s.type) ? s.type : 'other',
-      title: str(s.title, 100), stip: str(s.stip, 100), desc: str(s.desc, 2000), sides
+      title: str(s.title, 100), stip: str(s.stip, 100), desc: str(s.desc, 2000), sides,
+      length: cleanLength(s.length, SEG_TYPES.includes(s.type) ? s.type : 'other'),
+      beats: cleanBeats(s.beats)
     };
   });
+  if (segments.reduce((n, s) => n + s.beats.reduce((m, b) => m + b.text.length, 0), 0) > MAX_SCRIPT_CHARS)
+    throw new HttpError(400, 'That show script is too long. Shorten some segments.');
   return {
     title, date, time, tz: str(b.tz, 10), venue: str(b.venue, 100), city: str(b.city, 100),
     notes: str(b.notes, 2000), published: !!b.published, ple: !!b.ple, segments
@@ -423,7 +443,11 @@ function cleanEvent(b) {
 // Non-match segments (promos, backstage, angles…) are surprises: only the CEO ever receives them.
 const eventOut = (r, admin) => {
   const e = { id: r.id, ...JSON.parse(r.data), title: r.title, date: r.date, published: !!r.published };
-  if (!admin) e.segments = (e.segments || []).filter(s => s.type === 'match');
+  if (!admin) {
+    // The script text is never sent to the public here; it is released a little at a time while a viewer watches the show.
+    e.segments = (e.segments || []).filter(s => s.type === 'match')
+      .map(({ beats, ...s }) => ({ ...s, scripted: Array.isArray(beats) && beats.length > 0 }));
+  }
   return e;
 };
 
