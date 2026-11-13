@@ -110,7 +110,8 @@ function pageHome(){
   const wrap=h('div',{});
   wrap.append(h('div',{class:'hero'},
     h('div',{class:'cond',style:'color:var(--star);font-weight:700;font-size:15px'},'Live every Monday night'),
-    h('h1',{},'United States ',h('span',{},'Championship'),' Wrestling'),
+    h('img',{class:'hero-logo',src:'img/uscw-logo.webp',alt:'USCW – United States Championship Wrestling'}),
+    h('h1',{class:'sr-only'},'United States Championship Wrestling'),
     h('p',{},'Create your wrestler. Build your legend. Step through the curtain on Monday Night Mayhem.'),
     h('div',{class:'row c'},
       h('a',{class:'btn',href:S.user?'#my-wrestler':'#register'}, S.user?(me?'Edit My Wrestler':'Create Your Wrestler'):'Join USCW'),
@@ -619,6 +620,7 @@ S.db = { doc(path){
 /* ----- auth pages ----- */
 function authCard(title, ...kids){
   return h('div',{style:'max-width:440px;margin:30px auto'},
+    h('img',{class:'auth-badge',src:'img/uscw-badge.webp',alt:'USCW',width:'120'}),
     h('div',{class:'sect-h'},h('h2',{},title)),
     h('div',{class:'card'},kids));
 }
