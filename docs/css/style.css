@@ -8,8 +8,8 @@
   --star:#ffffff; --on-navy:#c9d4f5;
 }
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--text);font-family:'Barlow',system-ui,sans-serif;font-size:16px;line-height:1.5}
-body{min-height:100vh}
+html,body{margin:0;background:#0b2a6b;color:var(--text);font-family:'Barlow',system-ui,sans-serif;font-size:16px;line-height:1.5}
+body{min-height:100vh;background:url('../img/bg-tile.png') 0 0/360px 360px repeat fixed,linear-gradient(180deg,#0a2467 0%,#0f3a8f 100%) fixed}
 a{color:inherit}
 h1,h2,h3{font-family:'Bebas Neue',Impact,sans-serif;letter-spacing:.04em;font-weight:400;margin:0}
 .cond{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.08em}
@@ -25,8 +25,8 @@ nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
 nav a{font-family:'Barlow Condensed';text-transform:uppercase;letter-spacing:.1em;font-weight:600;font-size:15px;text-decoration:none;padding:6px 12px;border-radius:4px;color:var(--on-navy)}
 nav a:hover{color:#fff;background:rgba(255,255,255,.1)}
 nav a.on{background:var(--red);color:#fff}
-main{max-width:1100px;margin:0 auto;padding:26px 18px 70px}
-footer{text-align:center;color:var(--muted);font-size:13px;padding:20px 0 40px;border-top:1px solid var(--line)}
+main{width:min(1100px,calc(100% - 28px));margin:30px auto 24px;padding:26px 26px 50px;background:#fff;border:3px solid var(--navy);box-shadow:8px 8px 0 var(--blue);border-radius:4px}
+footer{text-align:center;color:var(--on-navy);font-size:13px;padding:14px 12px 40px}
 
 /* navy banners with a faint star pattern */
 .hero,.show-banner{
@@ -240,3 +240,21 @@ textarea{min-height:90px;resize:vertical}
 @keyframes cardSlamR{0%{opacity:0;transform:translateX(120px) scale(1.4) rotate(4deg)}55%{opacity:1;transform:translateX(-6px) scale(.96) rotate(0)}78%{transform:scale(1.04)}100%{opacity:1;transform:none}}
 @keyframes cardSlamB{0%{opacity:0;transform:translateY(90px) scale(1.4)}55%{opacity:1;transform:translateY(-5px) scale(.96)}78%{transform:scale(1.04)}100%{opacity:1;transform:none}}
 @keyframes vsDrop{0%{opacity:0;transform:scale(3.2);text-shadow:0 0 0 rgba(200,16,46,0)}55%{opacity:1;transform:scale(.88);text-shadow:0 0 22px rgba(200,16,46,.9)}100%{opacity:1;transform:none;text-shadow:0 0 10px rgba(200,16,46,.35)}}
+
+/* ----- wrestler profile card ----- */
+.wp{border:3px solid var(--navy);box-shadow:6px 6px 0 #9fb1d8;border-radius:4px;background:#fff;overflow:hidden;--ac:var(--navy)}
+.wp.Face{--ac:var(--blue)} .wp.Heel{--ac:var(--red)} .wp.Tweener{--ac:var(--navy2)}
+.wp-top{display:grid;grid-template-columns:260px 1fr;gap:26px;padding:22px 24px;border-top:10px solid var(--ac)}
+.wp-portrait{width:100%;aspect-ratio:4/5;border-radius:6px;pointer-events:none}
+.wp-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.wp-name{font-size:clamp(46px,8vw,92px);line-height:.92;color:var(--navy);font-style:italic;text-transform:uppercase;letter-spacing:.03em}
+.wp-nick{font-family:'Barlow Condensed',sans-serif;font-style:italic;font-size:26px;color:var(--ac);margin-top:4px}
+.wp-band{background:var(--navy);color:#fff;padding:18px 26px;border-top:4px solid var(--red)}
+.wp-band-l{color:var(--red-lt);font-weight:700;font-size:14px}
+.wp-fin{font-family:'Bebas Neue',Impact,sans-serif;font-size:40px;letter-spacing:.05em;line-height:1.05}
+.wp-fin-d{color:var(--on-navy);margin-top:4px}
+.wp-body{padding:22px 26px}
+.wp-body h2{font-size:30px;color:var(--navy);border-bottom:3px solid var(--navy);padding-bottom:4px;margin-bottom:12px;display:inline-block}
+.wp-private{margin:0 26px 26px;padding:14px 16px;border:2px dashed var(--red);border-radius:6px;background:#fdf0f2}
+.wp-priv-h{color:var(--red2);font-weight:700;font-size:13px;margin-bottom:8px}
+@media(max-width:700px){main{padding:18px 14px 36px;box-shadow:5px 5px 0 var(--blue)}.wp-top{grid-template-columns:1fr;gap:16px;padding:16px}.wp-portrait{max-width:220px}.wp-band,.wp-body{padding-left:16px;padding-right:16px}.wp-private{margin:0 16px 16px}}

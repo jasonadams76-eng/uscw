@@ -228,29 +228,41 @@ function pageWrestler(id){
   const w=S.wrestlers[id];
   if(!w) return h('div',{class:'empty'},'That wrestler could not be found. ',h('a',{href:'#superstars',style:'color:var(--red2)'},'Back to the superstars'));
   const wrap=h('div',{});
-  wrap.append(h('div',{class:'row',style:'margin-bottom:10px'},
+  wrap.append(h('div',{class:'row',style:'margin-bottom:14px'},
     h('a',{href:'#superstars',class:'cond',style:'color:var(--muted)'},'← Superstars'),
     h('div',{style:'flex:1'}),
     canEditW(id)?h('a',{class:'btn sm',href:'#edit-'+id},'Edit'):null,
     S.isCEO?h('button',{class:'btn danger sm',onclick:()=>confirmDlg('Release '+w.ringName+'?','This permanently removes the wrestler from the roster.','Release',()=>safe(async()=>{await S.db.doc('wrestlers/'+id).delete(); navTo('superstars');},'Wrestler released.'))},'Release'):null));
-  wrap.append(h('div',{class:'profile-top'},
-    h('div',{},
-      w.alignment?h('span',{class:'tag '+w.alignment},w.alignment):null,' ',
-      w.style?h('span',{class:'tag'},w.style):null,
-      champsOf(id).map(c=>[' ',h('span',{class:'tag red'},'★ '+c.name.replace(/ Championship$/,' Champion'))]),
-      h('h1',{class:'profile-name'},w.ringName),
-      w.nickname?h('div',{class:'cond',style:'color:var(--red);font-size:22px'},'“'+w.nickname+'”'):null,
-      h('div',{class:'stats'},
-        stat('Hometown',w.hometown), stat('Height',w.height), stat('Weight',w.weight?w.weight+' lbs':''),
-        stat('Name',w.realName), stat('Age',w.age), stat('Theme music',w.theme)))));
-  if(w.finisher&&w.finisher.name) wrap.append(h('div',{class:'sect'},h('div',{class:'finisher'},
-    h('div',{class:'cond',style:'color:var(--muted);font-size:13px'},'Finishing move'),
-    h('h3',{},w.finisher.name), w.finisher.desc?h('div',{class:'bio',style:'margin-top:4px'},w.finisher.desc):null)));
-  if(w.bio) wrap.append(h('div',{class:'sect'},h('div',{class:'sect-h'},h('h2',{},'Biography')),h('div',{class:'bio'},w.bio)));
+  const al=w.alignment||'Tweener';
+  const bg=h('div',{class:'tile-bg'});
+  if(w.image) bg.style.backgroundImage='url("'+String(w.image).replace(/"/g,'%22')+'")';
+  const belts=champsOf(id);
   const mv=w.moves||{};
   const cats=MOVE_CATS.filter(([k])=>(mv[k]||[]).length);
-  if(cats.length) wrap.append(h('div',{class:'sect'},h('div',{class:'sect-h'},h('h2',{},'Move Set')),
-    h('div',{class:'moves'},cats.map(([k,l])=>h('div',{class:'card'},h('h3',{},l),h('ul',{},mv[k].map(m=>h('li',{},m))))))));
+  const priv=(canEditW(id))&&(w.realName||cats.length);
+  const card=h('div',{class:'wp '+al},
+    h('div',{class:'wp-top'},
+      h('div',{class:'tile wp-portrait '+al},bg),
+      h('div',{class:'wp-head'},
+        h('div',{class:'wp-tags'},
+          w.alignment?h('span',{class:'tag '+w.alignment},w.alignment):null,
+          w.style?h('span',{class:'tag'},w.style):null,
+          belts.map(c=>h('span',{class:'tag red'},'★ '+c.name.replace(/ Championship$/,' Champion')))),
+        h('h1',{class:'wp-name'},w.ringName),
+        w.nickname?h('div',{class:'wp-nick'},'“'+w.nickname+'”'):null,
+        h('div',{class:'stats'},
+          stat('Hometown',w.hometown), stat('Height',w.height), stat('Weight',w.weight?w.weight+' lbs':''),
+          stat('Age',w.age), stat('Entrance theme',w.theme)))),
+    w.finisher&&w.finisher.name?h('div',{class:'wp-band'},
+      h('div',{class:'cond wp-band-l'},'Finishing move'),
+      h('div',{class:'wp-fin'},w.finisher.name),
+      w.finisher.desc?h('div',{class:'wp-fin-d'},w.finisher.desc):null):null,
+    w.bio?h('div',{class:'wp-body'},h('h2',{},'Biography'),h('div',{class:'bio'},w.bio)):null,
+    priv?h('div',{class:'wp-private'},
+      h('div',{class:'cond wp-priv-h'},S.isCEO?'CEO only — hidden from the public':'Only you and the CEO can see this'),
+      w.realName?h('div',{class:'stats',style:'margin-top:0'},stat('Real name',w.realName)):null,
+      cats.length?h('div',{class:'moves',style:'margin-top:12px'},cats.map(([k,l])=>h('div',{class:'card'},h('h3',{},l),h('ul',{},mv[k].map(m=>h('li',{},m)))))):null):null);
+  wrap.append(card);
   return wrap;
 }
 function stat(l,v){ return v?h('div',{class:'stat'},h('small',{},l),h('span',{},v)):null; }

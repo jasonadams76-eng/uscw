@@ -110,7 +110,7 @@ npx serve docs -p 8080               # http://localhost:8080
 | `POST /api/register`, `/verify`, `/resend-verification` | anyone | sign up, confirm email |
 | `POST /api/login`, `/logout`; `GET /api/me` | anyone / user | sessions |
 | `POST /api/forgot`, `/reset` | anyone | password reset |
-| `GET /api/wrestlers[/:id]` | anyone | roster and bios |
+| `GET /api/wrestlers[/:id]` | anyone | roster and bios. A wrestler's real name and move set are only included for the CEO and that wrestler's own player; everyone else gets them blank |
 | `PUT /api/wrestlers/:id` | owner or CEO | create/edit (player id = own user id). Every application field is required (400 with a message naming the first missing one), including at least one move in each of the five move categories |
 | `DELETE /api/wrestlers/:id` | CEO | release a wrestler (any title they hold becomes vacant) |
 | `GET /api/events[/:id]` | anyone (drafts: CEO only) | Monday Night Mayhem shows and PLEs (`ple: true`). Non-CEO callers receive only `match` segments; promos, backstage and other segments are CEO-only surprises. Each segment has a `length` in minutes (1–30) and a CEO-only `beats` script (text, pause, sound cue); the public sees only `length` and `scripted` |

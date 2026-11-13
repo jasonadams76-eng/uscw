@@ -356,18 +356,25 @@ function cleanWrestler(b) {
     moves, finisher: { name: finName, desc: finDesc }
   };
 }
-const wrestlerOut = r => ({ id: r.id, ownerId: r.owner_id, ...JSON.parse(r.data) });
+// Real name and move set are for the CEO and the wrestler's own player only; nobody else ever receives them.
+const wrestlerOut = (r, user) => {
+  const w = { id: r.id, ownerId: r.owner_id, ...JSON.parse(r.data) };
+  const full = user && (user.isAdmin || user.id === r.id || user.id === r.owner_id);
+  if (!full) { w.realName = ''; w.moves = {}; }
+  return w;
+};
 
 async function wrestlerRoutes(request, env, id) {
   const method = request.method;
   if (method === 'GET') {
+    const viewer = await getUser(request, env, false);
     if (id) {
       const r = await env.DB.prepare('SELECT * FROM wrestlers WHERE id = ?').bind(id).first();
       if (!r) throw new HttpError(404, 'Wrestler not found');
-      return json({ wrestler: wrestlerOut(r) });
+      return json({ wrestler: wrestlerOut(r, viewer) });
     }
     const { results } = await env.DB.prepare('SELECT * FROM wrestlers ORDER BY ring_name COLLATE NOCASE').all();
-    return json({ wrestlers: results.map(wrestlerOut) });
+    return json({ wrestlers: results.map(r => wrestlerOut(r, viewer)) });
   }
   const user = await getUser(request, env, true);
   if (!id) throw new HttpError(404, 'Not found');
