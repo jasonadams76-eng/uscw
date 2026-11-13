@@ -140,3 +140,8 @@ Each segment can carry a script of beats (text, optional pause, optional sound c
 moment. The CEO can preview a show at ×4–×16 speed from the Start screen. The show's start time uses its time zone field
 (ET, CT, MT, PT or a name like `America/Chicago`; blank means Eastern). Viewing records live in a small `show_views` table
 that the Worker creates by itself and clears after 3 days.
+
+## Update notice
+
+Every page load compares its version with `docs/version.json`; if a newer release is live, a banner offers a Reload button.
+Run `node tools/stamp.js` before each commit that changes anything in `docs/` — it writes a fresh version and stamps the `?v=` cache-busters in `docs/index.html`.

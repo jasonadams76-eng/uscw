@@ -948,5 +948,43 @@ async function boot(){
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && !S.editing) refresh(); });
 }
 window.addEventListener('hashchange', ()=>{ render(); refresh(); });
+
+/* ----- "a new version is available" check ----- */
+// The site is a set of static files. version.json carries the version of the latest release; if it differs from the
+// version this page loaded with, offer a reload. Never reloads by itself, so nobody loses their place mid-show.
+(function watchVersion(){
+  const LOADED=window.USCW_VERSION||'';
+  if(!LOADED) return;
+  try{ if(/[?&]v=/.test(location.search)) history.replaceState(null,'',location.pathname+location.hash); }catch(_){}
+  let later=0, shownFor='';
+  function banner(newV){
+    let el=document.getElementById('upd');
+    if(!el){
+      el=h('div',{id:'upd',class:'upd',role:'status'});
+      document.body.append(el);
+    }
+    el.replaceChildren(
+      h('span',{class:'upd-msg'},S.editing?'A new version of USCW is available. Save your work first, then reload.':'A new version of USCW is available.'),
+      h('button',{class:'btn sm',type:'button',onclick:()=>{ location.href=location.pathname+'?v='+encodeURIComponent(newV)+location.hash; }},'Reload'),
+      h('button',{class:'btn alt sm',type:'button',onclick:()=>{ later=Date.now()+30*60*1000; el.remove(); }},'Later'));
+    shownFor=newV;
+  }
+  async function check(){
+    if(Date.now()<later) return;
+    try{
+      const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'});
+      if(!r.ok) return;
+      const j=await r.json();
+      if(j&&typeof j.version==='string'&&j.version&&j.version!==LOADED){
+        if(shownFor!==j.version||!document.getElementById('upd')) banner(j.version);
+        else { const m=document.querySelector('#upd .upd-msg'); if(m) m.textContent=S.editing?'A new version of USCW is available. Save your work first, then reload.':'A new version of USCW is available.'; }
+      }
+    }catch(_){ /* offline or not published yet: stay quiet */ }
+  }
+  setTimeout(check,4000);
+  setInterval(check,5*60*1000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) check(); });
+  window.__uscwCheckVersion=check;
+})();
 boot();
 })();
