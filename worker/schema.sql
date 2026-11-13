@@ -84,3 +84,13 @@ INSERT OR IGNORE INTO championships (id, name, kind, sort) VALUES
   ('world-heavyweight', 'World Heavyweight Championship',         'singles', 1),
   ('us-heavyweight',    'United States Heavyweight Championship', 'singles', 2),
   ('world-tag',         'World Tag Team Championship',            'tag',     3);
+
+-- One row per viewer who presses "Start" on a show. The Worker creates this table by itself the first time it is
+-- needed, so you do not have to run this; it is listed here for completeness. Rows are purged after 3 days.
+CREATE TABLE IF NOT EXISTS show_views (
+  id          TEXT PRIMARY KEY,
+  event_id    TEXT NOT NULL,
+  started_at  INTEGER NOT NULL,
+  speed       INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_show_views_started ON show_views(started_at);

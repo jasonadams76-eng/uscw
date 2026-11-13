@@ -196,3 +196,24 @@ textarea{min-height:90px;resize:vertical}
 .script{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
 .beat{background:var(--blue-bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
 .beat textarea{min-height:70px}
+
+/* ----- watching a show ----- */
+.watch-cta{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:16px 0 4px}
+.watch-start{max-width:640px;margin:20px auto;text-align:center}
+.watch-start .banner-logo{margin:0 auto 14px}
+.watch-start h2{font-size:40px;color:var(--navy)}
+.watch-start .row.c{justify-content:center}
+.watch{max-width:760px;margin:0 auto}
+.w-bar{position:sticky;top:78px;z-index:10;display:flex;align-items:center;gap:14px;background:var(--navy);padding:8px 14px;border-radius:8px;margin-bottom:18px;box-shadow:0 4px 12px rgba(10,26,63,.2)}
+.w-prog{flex:1;height:6px;background:rgba(255,255,255,.2);border-radius:3px;overflow:hidden}
+.w-fill{height:100%;width:0;background:var(--red);transition:width .4s}
+.feed{padding-bottom:60px}
+.w-seg{margin:36px 0 14px;padding:14px 16px;border-left:6px solid var(--red);background:var(--blue-bg);border-radius:6px}
+.w-title{font-size:26px;font-weight:700;color:var(--navy);margin-top:4px}
+.w-stip{color:var(--muted);font-style:italic}
+.w-beat{font-size:20px;line-height:1.65;margin:0 0 16px;animation:fadein .5s}
+.w-end{text-align:center;margin-top:40px;padding:26px;border:2px solid var(--navy);border-radius:10px}
+.w-end h2{font-size:40px;color:var(--navy);margin-bottom:12px}
+@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media(max-width:600px){.w-beat{font-size:18px}.watch-start h2{font-size:32px}}
+@media(max-width:600px){header.top{position:static}.w-bar{top:0}}

@@ -94,7 +94,7 @@ async function safe(fn, okMsg){
 /* ---------- routing ---------- */
 function route(){
   const raw=(location.hash||'#home').slice(1)||'home';
-  const m=raw.match(/^(wrestler|event|edit|ceo-edit|reset|verify)-(.+)$/);
+  const m=raw.match(/^(wrestler|event|watch|edit|ceo-edit|reset|verify)-(.+)$/);
   if (m) return {name:m[1], id:m[2]};
   return {name:raw};
 }
@@ -105,7 +105,7 @@ function renderNav(r){
   const items=[['home','Home'],['mayhem','Mayhem'],['superstars','Superstars'],['ples','PLE Calendar']];
   if (S.user) items.push(['my-wrestler', S.wrestlers[S.uid] ? 'My Wrestler' : 'Create Wrestler']);
   if (S.isCEO) items.push(['ceo','CEO Office']);
-  const active = r.name==='wrestler'?'superstars': r.name==='event'?((S.events[r.id]&&S.events[r.id].ple)?'ples':'mayhem'): (r.name==='ceo-new-event'||r.name==='ceo-edit')?'ceo': (r.name==='edit'&&r.id===S.uid)?'my-wrestler': r.name;
+  const active = r.name==='wrestler'?'superstars': (r.name==='event'||r.name==='watch')?((S.events[r.id]&&S.events[r.id].ple)?'ples':'mayhem'): (r.name==='ceo-new-event'||r.name==='ceo-edit')?'ceo': (r.name==='edit'&&r.id===S.uid)?'my-wrestler': r.name;
   items.forEach(([k,l])=>nav.append(h('a',{href:'#'+k,class:active===k?'on':''},l)));
   if (S.user) nav.append(h('a',{href:'#home',onclick:e=>{e.preventDefault();doLogout();}},'Log out'));
   else { nav.append(h('a',{href:'#login',class:active==='login'?'on':''},'Log in')); nav.append(h('a',{href:'#register',class:active==='register'?'on':''},'Sign up')); }
@@ -323,6 +323,12 @@ function pageEvent(e){
     h('div',{class:'when'},fmtDate(e.date),e.time?[' · ',h('span',{},fmtTime(e.time)+(e.tz?' '+e.tz:''))]:null),
     (e.venue||e.city)?h('div',{style:'color:var(--on-navy);font-size:18px;margin-top:2px'},[e.venue,e.city].filter(Boolean).join(' — ')):null,
     e.notes?h('div',{class:'bio',style:'margin-top:12px;color:#e3e9ff'},e.notes):null));
+  if(e.hasScript){
+    const live=S.isCEO||(e.releaseAt&&Date.now()>=e.releaseAt);
+    wrap.append(h('div',{class:'watch-cta'}, live
+      ? [h('a',{class:'btn',href:'#watch-'+e.id},'▶ Watch the show'),h('span',{class:'hint'},'The show’s text unfolds a little at a time. Start whenever you’re ready.')]
+      : h('span',{class:'tag navy'},'Live text unlocks at show time')));
+  }
   const all=e.segments||[];
   const segs=all.filter(s=>s.type==='match');
   const segLine=(s,i,isMain,hidden)=>h('div',{class:'seg '+s.type},
@@ -351,6 +357,115 @@ function pageMayhem(){
   const wrap=h('div',{}, pageEvent(up[0]));
   if(up.length>1) wrap.append(h('div',{class:'sect'},h('div',{class:'sect-h'},h('h2',{},'Later Shows')),
     h('div',{class:'grid'},up.slice(1).map(eventTeaser))));
+  return wrap;
+}
+
+/* ----- watching a show: text revealed a little at a time ----- */
+function pageWatch(id){
+  const e=S.events[id];
+  if(!e||!(e.published||S.isCEO)) return h('div',{class:'empty'},'Show not found.');
+  const wrap=h('div',{class:'watch'});
+  const KEY='uscw_view_'+id;
+  const loadSaved=()=>{ try{ return JSON.parse(localStorage.getItem(KEY)||'null'); }catch(_){ return null; } };
+  const saveView=o=>{ try{ localStorage.setItem(KEY,JSON.stringify(o)); }catch(_){} };
+  const clearView=()=>{ try{ localStorage.removeItem(KEY); }catch(_){} };
+  const timers=new Set(); let stopped=false;
+  const later=(fn,ms)=>{ const t=setTimeout(()=>{ timers.delete(t); if(!stopped) fn(); },ms); timers.add(t); return t; };
+  S.stopWatch=()=>{ stopped=true; timers.forEach(t=>{clearTimeout(t);clearInterval(t);}); timers.clear(); };
+  const wc=t=>(String(t||'').trim().match(/\S+/g)||[]).length;
+
+  function startScreen(msg){
+    wrap.replaceChildren();
+    const sv=loadSaved();
+    const notLive=!S.isCEO&&e.releaseAt&&Date.now()<e.releaseAt;
+    const speedSel=S.isCEO?h('select',{style:'width:auto'},[[1,'Normal speed'],[4,'CEO preview ×4'],[8,'CEO preview ×8'],[16,'CEO preview ×16']].map(([v,l])=>h('option',{value:v},l))):null;
+    wrap.append(h('div',{class:'watch-start'},
+      evImg(e,'banner-logo'),
+      h('h2',{},e.title||'Monday Night Mayhem'),
+      msg?h('div',{class:'notice'},msg):null,
+      notLive
+        ? h('p',{},'This show goes live '+new Date(e.releaseAt).toLocaleString(undefined,{weekday:'long',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'})+'. Come back then!')
+        : [h('p',{},'The show unfolds a little at a time, just as it happens. Get comfortable and press start.'),
+           h('div',{class:'row c'},
+             sv?h('button',{class:'btn',onclick:()=>begin(sv)},'▶ Resume the show'):null,
+             h('button',{class:sv?'btn alt':'btn',onclick:()=>begin(null)},sv?'Start over':'▶ Start the show'),
+             speedSel)],
+      h('div',{style:'margin-top:14px'},h('a',{href:'#event-'+id,class:'cond',style:'color:var(--muted)'},'← Back to the card'))));
+    async function begin(resume){
+      try{
+        let view=resume&&resume.view, shown=resume?resume.shown||0:0, speed=resume?resume.speed||1:1;
+        if(!resume){
+          const r=await api('POST','/events/'+id+'/watch',{speed:speedSel?Number(speedSel.value):1});
+          view=r.view; speed=r.speed; shown=0; saveView({view,shown:0,speed});
+        }
+        play(view,speed,shown);
+      }catch(err){ if(err.code==='notlive') toast(err.message,true); else startScreen(err.message); }
+    }
+  }
+
+  function play(view,speed,resumeShown){
+    wrap.replaceChildren();
+    const feed=h('div',{class:'feed'});
+    const fill=h('div',{class:'w-fill'});
+    const pauseBtn=h('button',{class:'btn alt sm',type:'button',onclick:()=>{
+      st.paused=!st.paused; pauseBtn.textContent=st.paused?'▶ Resume':'❚❚ Pause'; if(!st.paused) playNext(); }},'❚❚ Pause');
+    wrap.append(h('div',{class:'w-bar'},pauseBtn,h('div',{class:'w-prog'},fill),h('a',{href:'#event-'+id,class:'cond',style:'color:var(--on-navy)'},'Leave')),feed);
+    const st={queue:[],received:0,shown:0,total:0,done:false,paused:false,busy:false,finished:false};
+    function segHeader(sg){
+      const sides=(sg.sides||[]).filter(x=>x.length);
+      feed.append(h('div',{class:'w-seg'},
+        h('span',{class:'tag '+(sg.type==='match'?'red':'navy')},SEG_TYPES[sg.type]||'Segment'),
+        sg.title?h('div',{class:'cond w-title'},sg.title):null,
+        sg.stip?h('div',{class:'w-stip'},sg.stip):null,
+        sides.length?h('div',{class:'vs'},sidesLine(sg.type==='match'?sides:[sides.flat()])):null));
+    }
+    function nearBottom(){ return window.innerHeight+window.scrollY>=document.body.scrollHeight-160; }
+    function follow(was){ if(was) window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}); }
+    function progress(){ fill.style.width=(st.total?Math.min(100,100*st.shown/st.total):0)+'%'; }
+    function shownOne(){ st.shown++; saveView({view,shown:st.shown,speed}); progress(); }
+    function instant(b){ if(b.seg) segHeader(b.seg); if(b.text) feed.append(h('p',{class:'w-beat'},b.text)); shownOne(); }
+    function playNext(){
+      if(stopped||st.paused||st.busy||st.finished) return;
+      const b=st.queue.shift();
+      if(!b){ if(st.done&&st.received>=st.total&&st.shown>=st.total) finish(); return; }
+      st.busy=true; const was=nearBottom();
+      if(b.seg) segHeader(b.seg);
+      const p=h('p',{class:'w-beat'}); feed.append(p);
+      follow(was);
+      const words=(b.text||'').split(/\s+/).filter(Boolean);
+      const total=Math.max(1.5,words.length/2.5)*1000/speed;
+      let n=0; const step=Math.max(25,total/Math.max(1,words.length));
+      const finishBeat=()=>{ shownOne(); later(()=>{ st.busy=false; playNext(); },(b.pause||0)*1000/speed); };
+      if(!words.length){ finishBeat(); return; }
+      const iv=setInterval(()=>{
+        if(stopped){ clearInterval(iv); return; }
+        const was2=nearBottom(); n++; p.textContent=words.slice(0,n).join(' '); follow(was2&&n===words.length);
+        if(n>=words.length){ clearInterval(iv); timers.delete(iv); finishBeat(); }
+      },step); timers.add(iv);
+    }
+    function finish(){
+      st.finished=true; clearView();
+      feed.append(h('div',{class:'w-end'},h('h2',{},'That’s the show!'),
+        h('div',{class:'row c'},h('a',{class:'btn',href:'#event-'+id},'Back to the card'),h('button',{class:'btn alt',onclick:()=>startScreen()},'Watch again'))));
+      follow(true); pauseBtn.style.display='none';
+    }
+    async function fetchMore(){
+      if(stopped) return;
+      try{
+        const r=await api('GET','/events/'+id+'/script?view='+view+'&after='+st.received);
+        st.total=r.total; st.done=!!r.done;
+        r.beats.forEach(b=>{ st.received++; if(resumeShown>0&&st.shown<resumeShown){ instant(b); } else st.queue.push(b); });
+        progress(); playNext();
+        if(!st.done) later(fetchMore,Math.max(1000,Math.min(15000,((r.nextIn==null?2:r.nextIn)*1000)+300)));
+        else playNext();
+      }catch(err){
+        if(err.code==='noview'){ clearView(); startScreen('That viewing expired. Start the show again.'); return; }
+        later(fetchMore,5000);
+      }
+    }
+    fetchMore();
+  }
+  startScreen();
   return wrap;
 }
 
@@ -594,6 +709,7 @@ function pagePLE(){
 function render(keep){
   const r=route();
   S.editing=false;
+  if(S.stopWatch){ S.stopWatch(); S.stopWatch=null; }
   renderNav(r);
   const app=$('#app'); app.replaceChildren();
   if(!keep) window.scrollTo(0,0);
@@ -606,6 +722,7 @@ function render(keep){
     case 'superstars': el=pageSuperstars(); break;
     case 'ples': el=pagePLE(); break;
     case 'wrestler': el=pageWrestler(r.id); break;
+    case 'watch': el=pageWatch(r.id); break;
     case 'event': { const e=S.events[r.id]; el=(e&&(e.published||S.isCEO))?pageEvent(e):pageEvent(null); break; }
     case 'my-wrestler': el=pageEditWrestler(S.uid, !S.wrestlers[S.uid]); break;
     case 'edit': el=pageEditWrestler(r.id, !S.wrestlers[r.id]); break;

@@ -115,6 +115,8 @@ npx serve docs -p 8080               # http://localhost:8080
 | `DELETE /api/wrestlers/:id` | CEO | release a wrestler (any title they hold becomes vacant) |
 | `GET /api/events[/:id]` | anyone (drafts: CEO only) | Monday Night Mayhem shows and PLEs (`ple: true`). Non-CEO callers receive only `match` segments; promos, backstage and other segments are CEO-only surprises. Each segment has a `length` in minutes (1–30) and a CEO-only `beats` script (text, pause, sound cue); the public sees only `length` and `scripted` |
 | `PUT/DELETE /api/events/:id` | CEO | build and remove shows, including each segment's length and script beats |
+| `POST /api/events/:id/watch` | anyone, once the show's start time has passed (CEO: any time) | a viewer presses Start; returns a `view` id. The CEO may send `speed` (1–20) to preview a show faster |
+| `GET /api/events/:id/script?view=…&after=N` | the viewer who started it | the script beats whose time has come, with their segment headers. Nothing is ever sent ahead of the viewer's own clock |
 | `GET /api/championships` | anyone | the three titles and their champions |
 | `PUT /api/championships/:id` | CEO | award or vacate a title (`holders`, `since`, `wonAt`) |
 
@@ -129,3 +131,12 @@ npx serve docs -p 8080               # http://localhost:8080
 - Updating an existing deployment: run `npm run db:init:remote` once (adds the championships and email-limit tables), then
   `npm run deploy`.
 - Possible next steps: match results and win/loss records, an archive of shows, rivalries.
+
+## Live show text
+
+Each segment can carry a script of beats (text, optional pause, optional sound cue). When a show's start time arrives, a
+**Watch the show** button appears on its page. Each viewer starts their own run; the Worker releases the text at roughly
+150 words a minute plus the CEO's pauses, so nobody can read ahead, and promos and backstage segments appear only at that
+moment. The CEO can preview a show at ×4–×16 speed from the Start screen. The show's start time uses its time zone field
+(ET, CT, MT, PT or a name like `America/Chicago`; blank means Eastern). Viewing records live in a small `show_views` table
+that the Worker creates by itself and clears after 3 days.

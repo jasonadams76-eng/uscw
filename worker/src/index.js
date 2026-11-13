@@ -70,9 +70,9 @@ function json(body, status = 200) {
     headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
   });
 }
-async function readJson(request) {
+async function readJson(request, limit = 256 * 1024) {
   const len = Number(request.headers.get('content-length') || 0);
-  if (len > 256 * 1024) throw new HttpError(413, 'Request too large');
+  if (len > limit) throw new HttpError(413, 'Request too large');
   try {
     const body = await request.json();
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw 0;
@@ -185,7 +185,9 @@ const publicUser = u => ({ id: u.id, email: u.email, isAdmin: !!u.isAdmin });
 
 async function cleanup(env) {
   const now = Date.now();
+  await ensureViews(env);
   await env.DB.batch([
+    env.DB.prepare('DELETE FROM show_views WHERE started_at < ?').bind(now - 3 * 24 * 3600 * 1000),
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
     env.DB.prepare('DELETE FROM email_tokens WHERE expires_at < ?').bind(now),
     env.DB.prepare('DELETE FROM email_log WHERE sent_at < ?').bind(now - 2 * 24 * 3600 * 1000),
@@ -443,6 +445,8 @@ function cleanEvent(b) {
 // Non-match segments (promos, backstage, angles…) are surprises: only the CEO ever receives them.
 const eventOut = (r, admin) => {
   const e = { id: r.id, ...JSON.parse(r.data), title: r.title, date: r.date, published: !!r.published };
+  e.hasScript = (e.segments || []).some(s => Array.isArray(s.beats) && s.beats.length > 0);
+  e.releaseAt = releaseAt(e);
   if (!admin) {
     // The script text is never sent to the public here; it is released a little at a time while a viewer watches the show.
     e.segments = (e.segments || []).filter(s => s.type === 'match')
@@ -451,7 +455,110 @@ const eventOut = (r, admin) => {
   return e;
 };
 
-async function eventRoutes(request, env, id) {
+/* ---------------- live show script ---------------- */
+// Viewers start the show themselves. The Worker only hands out text once enough time has passed since they pressed
+// Start, so nobody can read ahead. Pacing comes from the text itself (about 150 words a minute) plus the CEO's pauses.
+const TZ_MAP = {
+  ET: 'America/New_York', EST: 'America/New_York', EDT: 'America/New_York',
+  CT: 'America/Chicago', CST: 'America/Chicago', CDT: 'America/Chicago',
+  MT: 'America/Denver', MST: 'America/Denver', MDT: 'America/Denver',
+  PT: 'America/Los_Angeles', PST: 'America/Los_Angeles', PDT: 'America/Los_Angeles'
+};
+function tzName(tz) {
+  const k = String(tz || '').trim().toUpperCase().replace(/[^A-Z]/g, '');
+  if (TZ_MAP[k]) return TZ_MAP[k];
+  try { new Intl.DateTimeFormat('en-US', { timeZone: String(tz).trim() }); return String(tz).trim(); } catch { /* fall through */ }
+  return 'America/New_York';
+}
+// The moment (ms since 1970) a wall-clock date and time occurs in a time zone.
+function zonedToUtc(date, time, tz) {
+  const [y, mo, d] = date.split('-').map(Number);
+  const [hh, mi] = (time || '00:00').split(':').map(Number);
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' });
+  const offsetAt = t => {
+    const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map(x => [x.type, x.value]));
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - t;
+  };
+  const guess = Date.UTC(y, mo - 1, d, hh, mi);
+  return guess - offsetAt(guess - offsetAt(guess));
+}
+function releaseAt(e) {
+  try { return zonedToUtc(e.date, e.time, tzName(e.tz)); } catch { return 0; }
+}
+const REVEAL_WPS = 2.5, SEG_GAP = 4;
+function buildTimeline(data) {
+  const beats = []; let t = 0, first = true;
+  for (const s of data.segments || []) {
+    const list = (s.beats || []).filter(b => b.text || b.cue);
+    if (!list.length) continue;
+    if (!first) t += SEG_GAP;
+    first = false;
+    list.forEach((b, j) => {
+      const words = (b.text.match(/\S+/g) || []).length;
+      const dur = Math.max(1.5, words / REVEAL_WPS) + (b.pause || 0);
+      beats.push({
+        t, dur, text: b.text, cue: b.cue || '', pause: b.pause || 0,
+        seg: j === 0 ? { id: s.id, type: s.type, title: s.title || '', stip: s.stip || '', sides: s.sides || [], length: s.length } : null
+      });
+      t += dur;
+    });
+  }
+  return { beats, total: t };
+}
+let viewsReady = null;
+function ensureViews(env) {
+  if (!viewsReady) {
+    viewsReady = env.DB.batch([
+      env.DB.prepare('CREATE TABLE IF NOT EXISTS show_views (id TEXT PRIMARY KEY, event_id TEXT NOT NULL, started_at INTEGER NOT NULL, speed INTEGER NOT NULL DEFAULT 1)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_show_views_started ON show_views(started_at)')
+    ]).catch(e => { viewsReady = null; throw e; });
+  }
+  return viewsReady;
+}
+async function loadWatchable(env, id, admin) {
+  const r = await env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first();
+  if (!r || (!r.published && !admin)) throw new HttpError(404, 'Show not found');
+  return { r, data: JSON.parse(r.data) };
+}
+async function watchStart(request, env, id) {
+  await ensureViews(env);
+  const user = await getUser(request, env, false);
+  const admin = !!(user && user.isAdmin);
+  const { data } = await loadWatchable(env, id, admin);
+  const tl = buildTimeline(data);
+  if (!tl.beats.length) throw new HttpError(404, 'This show has no live text yet.');
+  if (!admin && Date.now() < releaseAt(data)) throw new HttpError(403, 'The show isn’t live yet. Come back at show time!', 'notlive');
+  let body = {}; try { body = await request.json(); } catch { /* no body */ }
+  const speed = admin ? Math.max(1, Math.min(20, Math.round(Number(body && body.speed)) || 1)) : 1;
+  const view = randHex(12), now = Date.now();
+  await env.DB.prepare('INSERT INTO show_views (id, event_id, started_at, speed) VALUES (?, ?, ?, ?)').bind(view, id, now, speed).run();
+  return json({ view, speed, total: tl.beats.length, duration: Math.round(tl.total / speed) });
+}
+async function watchScript(request, env, id) {
+  await ensureViews(env);
+  const url = new URL(request.url);
+  const view = url.searchParams.get('view') || '';
+  if (!/^[a-f0-9]{24}$/.test(view)) throw new HttpError(400, 'Missing view.');
+  const after = Math.max(0, parseInt(url.searchParams.get('after') || '0', 10) || 0);
+  const user = await getUser(request, env, false);
+  const admin = !!(user && user.isAdmin);
+  const v = await env.DB.prepare('SELECT * FROM show_views WHERE id = ? AND event_id = ?').bind(view, id).first();
+  if (!v) throw new HttpError(404, 'That viewing has expired. Start the show again.', 'noview');
+  const { data } = await loadWatchable(env, id, admin);
+  const tl = buildTimeline(data);
+  const elapsed = (Date.now() - v.started_at) / 1000 * v.speed;
+  const due = []; let nextIn = null;
+  tl.beats.forEach((b, i) => {
+    if (b.t <= elapsed) { if (i >= after) due.push({ i, text: b.text, cue: b.cue, pause: b.pause, dur: b.dur, seg: b.seg }); }
+    else if (nextIn === null) nextIn = (b.t - elapsed) / v.speed;
+  });
+  return json({ beats: due, total: tl.beats.length, nextIn, speed: v.speed, done: nextIn === null });
+}
+
+async function eventRoutes(request, env, id, sub) {
+  if (sub === 'watch' && request.method === 'POST') return watchStart(request, env, id);
+  if (sub === 'script' && request.method === 'GET') return watchScript(request, env, id);
+  if (sub) throw new HttpError(404, 'Not found');
   const method = request.method;
   if (method === 'GET') {
     const user = await getUser(request, env, false);
@@ -469,7 +576,7 @@ async function eventRoutes(request, env, id) {
   if (!user.isAdmin) throw new HttpError(403, 'Only the CEO can manage events.');
   if (!id) throw new HttpError(404, 'Not found');
   if (method === 'PUT') {
-    const data = cleanEvent(await readJson(request));
+    const data = cleanEvent(await readJson(request, 700 * 1024));
     await env.DB.prepare(
       `INSERT INTO events (id, title, date, published, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET title = excluded.title, date = excluded.date, published = excluded.published,
@@ -535,10 +642,11 @@ async function route(request, env) {
   }
   if (m === 'GET' && path === '/api/me') return json({ user: publicUser(await getUser(request, env, true)) });
 
-  const r = path.match(/^\/api\/(wrestlers|events|championships)(?:\/([A-Za-z0-9_-]{1,64}))?$/);
+  const r = path.match(/^\/api\/(wrestlers|events|championships)(?:\/([A-Za-z0-9_-]{1,64}))?(?:\/(watch|script))?$/);
   if (r) {
+    if (r[3] && r[1] !== 'events') throw new HttpError(404, 'Not found');
     if (r[1] === 'wrestlers') return wrestlerRoutes(request, env, r[2]);
-    if (r[1] === 'events') return eventRoutes(request, env, r[2]);
+    if (r[1] === 'events') return eventRoutes(request, env, r[2], r[3]);
     return championshipRoutes(request, env, r[2]);
   }
   throw new HttpError(404, 'Not found');
