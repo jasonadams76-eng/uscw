@@ -769,6 +769,7 @@ async function submissionRoutes(request, env, id) {
 // Model ids are kept here so a changed name is a one-line fix (or set GEMINI_MODEL_MAIN / GEMINI_MODEL_LITE as variables).
 const GEMINI_MODEL_MAIN = 'gemini-3.8-flash';        // intro, promos, backstage, angles, main event (about 20 free requests a day)
 const GEMINI_MODEL_LITE = 'gemini-3.5-flash-lite';   // undercard matches (about 500 free requests a day)
+const GEMINI_MODEL_FALLBACK = 'gemini-3.1-flash-lite'; // last resort when the others are busy or out of quota (variable GEMINI_MODEL_FALLBACK)
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 const AI_CUES = ['intro_music', 'bell', 'crowd_pop', 'crowd_boo', 'crowd_chant', 'mat_slam', 'pin_count', 'chair_shot'];
 const AI_SYSTEM = `You write the live text for USCW (United States Championship Wrestling), a fictional wrestling league's weekly TV show "Monday Night Mayhem" and its premium live events. Viewers read the text a few lines at a time, like a live broadcast.
@@ -950,17 +951,31 @@ async function aiDraft(request, env) {
   const profiles = rows.map(r => { try { return aiProfile(r, facts); } catch (_) { return ''; } }).filter(Boolean).join('\n');
   const prompt = aiPrompt(b, profiles, nameOf);
   const words = kind === 'polish' ? Math.max(120, b.baseWords) : b.segment.length * 150;
-  const mainModel = env.GEMINI_MODEL_MAIN || GEMINI_MODEL_MAIN, liteModel = env.GEMINI_MODEL_LITE || GEMINI_MODEL_LITE;
-  let model = b.tier === 'lite' ? liteModel : mainModel, fellBack = false, beats;
-  try {
-    beats = await geminiCall(env, model, AI_SYSTEM, prompt, words);
-  } catch (e) {
-    // Out of daily quota, or a model name that is not valid: try the Flash-Lite model instead of failing.
-    if (b.tier === 'main' && (e.kind === 'quota' || e.kind === 'model' || e.kind === 'upstream')) {
-      model = liteModel; fellBack = true;
-      beats = await geminiCall(env, model, AI_SYSTEM, prompt, words).catch(e2 => { throw aiFail(e2); });
-    } else throw aiFail(e);
+  const mainModel = env.GEMINI_MODEL_MAIN || GEMINI_MODEL_MAIN, liteModel = env.GEMINI_MODEL_LITE || GEMINI_MODEL_LITE, backupModel = env.GEMINI_MODEL_FALLBACK || GEMINI_MODEL_FALLBACK;
+  // Cheaper calls: lite, then 3.1, then the stronger model. Stronger calls: stronger, then lite, then 3.1.
+  const chain = [...new Set(b.tier === 'lite' ? [liteModel, backupModel, mainModel] : [mainModel, liteModel, backupModel])];
+  const t0 = Date.now();
+  let model = chain[0], beats = null, lastErr = null, busy = false;
+  for (let i = 0; i < chain.length && !beats; i++) {
+    for (let attempt = 0; attempt < 2 && !beats; attempt++) {
+      if (i > 0 || attempt > 0) { if (Date.now() - t0 > 75000) break; }
+      try {
+        model = chain[i];
+        beats = await geminiCall(env, model, AI_SYSTEM, prompt, words);
+      } catch (e) {
+        lastErr = e;
+        if (e.kind === 'upstream') { busy = true; if (attempt === 0) { await new Promise(r => setTimeout(r, 2000)); continue; } }
+        break;  // quota, bad model name, unreadable reply: move to the next model; a blocked prompt is final (below)
+      }
+    }
+    if (!beats && lastErr && lastErr.kind === 'blocked') break;
+    if (!beats && Date.now() - t0 > 75000) break;
   }
+  if (!beats) {
+    if (lastErr && lastErr.kind !== 'blocked' && busy) throw new HttpError(503, 'Gemini is busy right now and none of the backup models could answer. Try again in a minute.');
+    throw aiFail(lastErr || new Error('The AI writer failed.'));
+  }
+  const fellBack = model !== chain[0];
   const ok = new Set(ids);
   const out = cleanBeats(beats.map(x => {
     x = x && typeof x === 'object' ? x : {};
