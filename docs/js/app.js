@@ -241,6 +241,32 @@ function niceDate(iso,dow){
 function storyOf(id){ const s=(S.story&&S.story[id])||{}; return {results:s.results||[],feuds:s.feuds||[],notes:s.notes||[],level:s.level||''}; }
 const LEVEL_OPTS=[['','Not set'],['jobber','Jobber'],['lower','Lower Card'],['mid','Mid Card'],['star','Superstar']];
 const LEVEL_HINT={jobber:'Fodder for the roster. The announcers have a low opinion of him.',lower:'Trying to prove himself or cannot get over the hump. The announcers are unsure of him.',mid:'A respected competitor and a contender for the U.S. or Tag titles.',star:'Cream of the crop, over with the fans. The announcers heap on the praise.','':'No special treatment from the announcers.'};
+// Recorded results (automatic, from published shows) plus any older hand-entered ones, newest first.
+function recentResults(wid,cut,exceptEvent){
+  const auto=((S.history)||[]).filter(r=>r.w===wid&&(!cut||!r.date||r.date<=cut)&&(!exceptEvent||r.event!==exceptEvent))
+    .map(r=>({auto:true,rid:r.id,date:r.date,show:r.show,opponent:r.opponent,result:r.result,how:r.finish,locked:r.locked}));
+  const hand=storyOf(wid).results.filter(x=>!cut||!x.date||x.date<=cut).map(x=>Object.assign({},x));
+  return auto.concat(hand).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+}
+// Earlier meetings between the sides of a match (newest first, at most 5), from the recorded results.
+function meetingsOf(sg,d){
+  const real=sg.sides.filter(x=>x.length), seen=new Set(), out=[];
+  for(let i=0;i<real.length;i++) for(let j=i+1;j<real.length;j++){
+    (S.history||[]).forEach(r=>{
+      if(!real[i].includes(r.w)||!(r.opp||[]).some(o=>real[j].includes(o))) return;
+      if(d&&d.id&&r.event===d.id) return;
+      if(d&&d.date&&r.date>d.date) return;
+      const k=r.event+'|'+r.seg; if(seen.has(k)) return; seen.add(k); out.push(r);
+    });
+  }
+  return out.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,5);
+}
+function meetText(sg,d){
+  const m=meetingsOf(sg,d); if(!m.length) return '';
+  const last=m[0], who=last.result==='Draw'?'':wname(last.result==='Win'?last.w:(sg.sides.flat().find(x=>x!==last.w&&(last.opp||[]).includes(x))||last.w));
+  const n=m.length;
+  return ' They have met '+(n===1?'once':n+' times')+' before'+(who?', and '+who+' won their last meeting':', and their last meeting ended in a draw')+'.';
+}
 async function saveStory(id, mutate){
   const st=JSON.parse(JSON.stringify(storyOf(id))); mutate(st);
   const res=await api('PUT','/story/'+id,st);
@@ -298,8 +324,9 @@ function storyBlurb(wid,d){
     const fn=S.wrestlers[f.with]?S.wrestlers[f.with].ringName:f.with;
     out.push(n+' is locked in a heated feud with '+fn+(f.reason?': '+trimEnd(f.reason):'')+'.');
   });
-  const res=st.results.filter(x=>!x.date||x.date<=cut).sort(desc)[0];
-  if(res) out.push(resultLine(n,res));
+  const rr=recentResults(wid,cut,d.id).slice(0,5);
+  if(rr[0]) out.push(resultLine(n,rr[0]));
+  if(rr.length>1) out.push(n+'’s recent form, newest first: '+rr.map(r=>(r.result==='Win'?'beat ':r.result==='Loss'?'lost to ':r.result==='Draw'?'drew with ':'no contest against ')+r.opponent).join('; ')+'.');
   const from=d.date&&d.date>todayISO()?d.date:todayISO();
   const up=upcomingFor(wid,{from,exceptId:d.id}).filter(u=>u.e.date>(d.date||''))[0];
   if(up){
@@ -313,7 +340,7 @@ function whyCare(sg,d,main){
   const cut=d.date||'9999-12-31', out=[];
   const firsts=sg.sides.map(x=>x[0]).filter(w=>w&&S.wrestlers[w]);
   firsts.forEach(w=>{
-    const r=storyOf(w).results.filter(x=>!x.date||x.date<=cut).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+    const r=recentResults(w,cut,d.id)[0];
     if(r) out.push(resultLine(wname(w),r));
   });
   const stakes=matchStakes(sg), title=(sg.title||'').trim(), stip=(sg.stip||'').trim().replace(/\s+match$/i,'');
@@ -368,7 +395,7 @@ function draftIntro(d){
       const f=storyOf(flat[a]).feuds.find(x=>x.with===flat[b]);
       if(f) fl=' '+(f.reason?'This one is personal: '+trimEnd(f.reason)+'.':wname(flat[a])+' and '+wname(flat[b])+' have a score to settle.');
     }
-    beats.push({cue:main?'crowd_pop':'',pause:0,text:say(t+fl)});
+    beats.push({cue:main?'crowd_pop':'',pause:0,text:say(t+fl+meetText(sg,d))});
     beats.push({cue:'',pause:0,text:'Earl Backwater: “'+whyCare(sg,d,main)+'”'});
   });
   if(!matches.length) beats.push({cue:'',pause:0,text:say('The card is being kept under wraps tonight, and I can tell you, nobody is ready for what is coming!')});
@@ -411,7 +438,7 @@ function introFacts(d){
   });
   const inMatch=new Set(matches.flatMap(s=>s.sides.flat())), appear=[];
   d.segments.filter(s=>s.type!=='match'&&s.type!=='show_intro').forEach(s=>s.sides.flat().forEach(w=>{ if(S.wrestlers[w]&&!inMatch.has(w)&&!appear.includes(w)) appear.push(w); }));
-  return {matches:lines, appearances:appear.map(w=>({name:wname(w),facts:storyBlurb(w,d).slice(0,6)}))};
+  return {matches:lines, sides:matches.map(sg=>sg.sides.map(x=>x.filter(w=>S.wrestlers[w]))), appearances:appear.map(w=>({name:wname(w),facts:storyBlurb(w,d).slice(0,6)}))};
 }
 function aiEarlier(d,idx){
   const out=[];
@@ -438,7 +465,7 @@ function aiPayload(d,idx){
   const ids=[...new Set((isIntro?d.segments.filter(x=>x.type!=='show_intro'):[s]).flatMap(x=>x.sides.flat()).filter(w=>S.wrestlers[w]))].slice(0,24);
   const facts={}; ids.forEach(w=>{ facts[w]=storyBlurb(w,d).slice(0,6); });
   const p={kind:isIntro?'intro':'segment', tier:aiTier(d,idx),
-    show:{title:d.title,date:d.date,venue:d.venue,city:d.city,ple:!!d.ple,notes:d.notes},
+    show:{id:d.id,title:d.title,date:d.date,venue:d.venue,city:d.city,ple:!!d.ple,notes:d.notes},
     segment:{type:s.type,title:s.title,stip:s.stip,desc:s.desc,length:s.length,sides:s.sides.map(x=>x.filter(w=>S.wrestlers[w]))},
     wrestlers:ids, facts, levels:Object.fromEntries(ids.map(w=>[w,storyOf(w).level]).filter(x=>x[1])), earlier:aiEarlier(d,idx),
     champions:S.champs.filter(c=>c.holders.some(id=>S.wrestlers[id])).map(c=>c.name+': '+andList(c.holders.filter(id=>S.wrestlers[id]).map(wname)))};
@@ -540,6 +567,7 @@ function storyPanel(id){
   const w=S.wrestlers[id], box=h('div',{class:'story'});
   async function mut(fn,msg){ if(await safe(()=>saveStory(id,fn),msg)) draw(); }
   const rosterOpts=Object.entries(S.wrestlers).filter(([k])=>k!==id).sort((a,b)=>a[1].ringName.localeCompare(b[1].ringName));
+  let editRid=0;
   const del=(label,fn)=>h('button',{type:'button',class:'btn danger sm',title:'Delete',onclick:()=>mut(fn,'Removed.')},label||'×');
   function draw(){
     box.replaceChildren();
@@ -550,19 +578,26 @@ function storyPanel(id){
     box.append(h('h3',{},'Upcoming matches'),
       up.length?h('ul',{class:'story-list'},up.map(u=>h('li',{},upcomingLine(u,id)))):h('div',{class:'hint'},'None yet. This fills in automatically from published cards.'));
     // results
-    const r={date:todayISO(),show:'',opponent:'',result:'Win',how:''};
+    const all=recentResults(id,''), shown=all.slice(0,5);
+    const rline=it=>(it.date?niceDate(it.date)+' · ':'')+(it.show?it.show+' · ':'')+it.result+' vs. '+it.opponent+(it.how?' ('+it.how+')':'');
     box.append(h('h3',{},'Recent results'),
-      st.results.length?h('ul',{class:'story-list'},st.results.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(it=>h('li',{},
-        h('span',{},(it.date?niceDate(it.date)+' · ':'')+(it.show?it.show+' · ':'')+it.result+' vs. '+it.opponent+(it.how?' ('+it.how+')':'')),
-        del('×',s=>{s.results=s.results.filter(x=>x.id!==it.id);})))):h('div',{class:'hint'},'No results recorded.'),
-      h('div',{class:'story-add'},
-        h('input',{type:'date',value:r.date,oninput:e=>{r.date=e.target.value;}}),
-        h('input',{type:'text',placeholder:'Show (e.g. Mayhem)',oninput:e=>{r.show=e.target.value;}}),
-        h('input',{type:'text',placeholder:'Opponent',list:'story-opps-'+id,oninput:e=>{r.opponent=e.target.value;}}),
-        h('select',{onchange:e=>{r.result=e.target.value;}},RESULT_OPTS.map(o=>h('option',{value:o},o))),
-        h('input',{type:'text',placeholder:'How (optional)',oninput:e=>{r.how=e.target.value;}}),
-        h('button',{type:'button',class:'btn sm',onclick:()=>{ if(!r.opponent.trim()){toast('Enter the opponent.',true);return;} mut(s=>{s.results.unshift({id:uid8(),date:r.date,show:r.show.trim(),opponent:r.opponent.trim(),result:r.result,how:r.how.trim()});},'Result added.'); }},'Add result'),
-        h('datalist',{id:'story-opps-'+id},rosterOpts.map(([k,x])=>h('option',{value:x.ringName})))));
+      shown.length?h('ul',{class:'story-list'},shown.map(it=>{
+        if(editRid&&it.auto&&it.rid===editRid){
+          const e={result:it.result,opponent:it.opponent,how:it.how||''};
+          return h('li',{},h('div',{class:'story-add',style:'flex:1'},
+            h('select',{onchange:ev=>{e.result=ev.target.value;}},RESULT_OPTS.map(o=>h('option',{value:o,selected:o===it.result},o))),
+            h('input',{type:'text',value:e.opponent,placeholder:'Opponent',oninput:ev=>{e.opponent=ev.target.value;}}),
+            h('input',{type:'text',class:'wide',value:e.how,placeholder:'How it ended (optional)',oninput:ev=>{e.how=ev.target.value;}}),
+            h('button',{type:'button',class:'btn sm',onclick:async()=>{ if(await safe(async()=>{ const r=await api('PUT','/story-result/'+it.rid,{result:e.result,opponent:e.opponent,finish:e.how}); const i=(S.history||[]).findIndex(x=>x.id===it.rid); if(i>=0&&r.row) S.history[i]=r.row; },'Result updated.')){ editRid=0; draw(); } }},'Save'),
+            h('button',{type:'button',class:'btn alt sm',onclick:()=>{ editRid=0; draw(); }},'Cancel')));
+        }
+        return h('li',{},h('span',{},rline(it)),
+          it.auto?h('button',{type:'button',class:'btn alt sm',title:'Edit this result',onclick:()=>{ editRid=it.rid; draw(); }},'Edit'):null,
+          it.auto?h('button',{type:'button',class:'btn danger sm',title:'Delete this result',onclick:async()=>{ if(await safe(async()=>{ await api('DELETE','/story-result/'+it.rid); S.history=(S.history||[]).filter(x=>x.id!==it.rid); },'Removed.')) draw(); }},'×')
+                 :del('×',s=>{s.results=s.results.filter(x=>x.id!==it.id);}));
+      })):h('div',{class:'hint'},'No results recorded yet. They are added automatically once a published show’s release time has passed.'),
+      ...(all.length>5?[h('div',{class:'hint'},(all.length-5)+' older result'+(all.length-5===1?'':'s')+' on record. Only the five most recent count as current form.')]:[]),
+      h('div',{class:'hint'},'Results come from the winners set on each match. Edit or delete one if it is wrong; a result you change is not overwritten later. Each wrestler in a match has his own row.'));
     // superstar level (CEO only; never shown to viewers or named on air)
     box.append(h('h3',{},'Superstar Level'),
       h('div',{class:'story-add'},h('select',{onchange:e=>mut(s=>{s.level=e.target.value;},'Level saved.')},LEVEL_OPTS.map(([v,l])=>h('option',{value:v,selected:st.level===v},l)))),
@@ -1554,7 +1589,7 @@ async function loadAll(){
   }); e.events.forEach(x=>{em[x.id]=x;});
   const sig = JSON.stringify([wm,em,c.championships]);
   const changed = sig!==S.sig;
-  if(S.isCEO){ try{ S.story=(await api('GET','/story')).stories||{}; }catch(_){} await loadSubs(); } else S.story={};
+  if(S.isCEO){ try{ { const sr=await api('GET','/story'); S.story=sr.stories||{}; S.history=sr.history||[]; } }catch(_){} await loadSubs(); } else S.story={};
   S.sig=sig; S.wrestlers=wm; S.events=em; S.champs=c.championships||[]; S.loadedW=S.loadedE=true; S.failed=false;
   return changed;
 }

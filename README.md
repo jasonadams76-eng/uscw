@@ -206,3 +206,8 @@ An entrance theme loops under the announcers (dropping to 40% volume after a few
 
 ## Superstar Level (CEO only)
 Each wrestler's Storylines panel has a Superstar Level: Not set, Jobber, Lower Card, Mid Card or Superstar. It is private (storylines are CEO-only) and saves instantly. The AI receives only an "announcer attitude" description, never the label, so the announcers show it through opinions and react with surprise to upsets and to titles held above someone's standing. Drafts are scanned for insider terms (jobber, lower card, mid card, upper card, "doing the job", and so on); a draft containing one is rewritten once and rejected with a message if it still does.
+
+## Recorded results and head-to-head
+- When a published show's release time has passed, every match with a winner (or a draw) is recorded in the `match_results` table, one row per wrestler, never trimmed. The Worker catches up whenever Storylines is opened or an AI draft is requested.
+- A wrestler's Recent results panel shows the 5 most recent; the CEO can Edit or delete an automatic result (an edited or deleted result is not overwritten by later catch-ups). The old Add result form is gone; hand-entered results already on file stay until deleted.
+- The AI gets "PREVIOUS MEETINGS" (up to 5, newest first) for each match and in the intro rundown, plus each wrestler's last 5 results as recent form. The built-in intro writer mentions how often the two have met and who won last.

@@ -496,6 +496,119 @@ async function backfillFeuds(env, stories) {
   }
   for (const x of dirty) await saveStoryRow(env, x, cleanStory(stories[x]));
 }
+/* ---------------- recorded match results ---------------- */
+// One row per wrestler per match, filled in automatically once a published show's release time has passed. Never trimmed.
+let resultsReady = null;
+function ensureResults(env) {
+  if (!resultsReady) {
+    resultsReady = env.DB.batch([
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS match_results (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, seg_id TEXT NOT NULL, wrestler_id TEXT NOT NULL, date TEXT NOT NULL DEFAULT '', show TEXT NOT NULL DEFAULT '', result TEXT NOT NULL, opponent TEXT NOT NULL DEFAULT '', opp_ids TEXT NOT NULL DEFAULT '[]', finish TEXT NOT NULL DEFAULT '', locked INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)`),
+      env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_mr_key ON match_results(event_id, seg_id, wrestler_id)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_mr_w ON match_results(wrestler_id, date)')
+    ]).catch(e => { resultsReady = null; throw e; });
+  }
+  return resultsReady;
+}
+let lastResultSync = 0;
+// Catch up: record results for every published show whose release time has passed. Edited or deleted rows are never overwritten.
+async function syncResults(env, force) {
+  await ensureResults(env);
+  if (!force && Date.now() - lastResultSync < 30000) return;
+  lastResultSync = Date.now();
+  try {
+    const now = Date.now();
+    const { results: evs } = await env.DB.prepare('SELECT id, title, date, data FROM events WHERE published = 1').all();
+    const { results: ws } = await env.DB.prepare('SELECT id, data FROM wrestlers').all();
+    const names = {}; for (const r of ws) { try { names[r.id] = JSON.parse(r.data).ringName; } catch (_) { /* skip */ } }
+    const { results: existing } = await env.DB.prepare('SELECT * FROM match_results').all();
+    const keyOf = (e, g, w) => `${e}|${g}|${w}`;
+    const byKey = new Map(existing.map(r => [keyOf(r.event_id, r.seg_id, r.wrestler_id), r]));
+    const want = new Set(), stmts = [];
+    const ins = env.DB.prepare('INSERT OR IGNORE INTO match_results (event_id, seg_id, wrestler_id, date, show, result, opponent, opp_ids, finish, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const upd = env.DB.prepare('UPDATE match_results SET date = ?, show = ?, result = ?, opponent = ?, opp_ids = ?, finish = ?, updated_at = ? WHERE id = ?');
+    for (const ev of evs) {
+      let data; try { data = JSON.parse(ev.data); } catch (_) { continue; }
+      const rel = releaseAt({ ...data, date: ev.date });
+      if (!rel || rel > now) continue;
+      for (const seg of data.segments || []) {
+        if (seg.type !== 'match' || !seg.result) continue;
+        const sides = Array.isArray(seg.sides) ? seg.sides : [];
+        if (sides.filter(x => Array.isArray(x) && x.length).length < 2) continue;
+        const win = seg.result.winner;
+        if (!Number.isInteger(win) || win < -1 || win >= sides.length || (win >= 0 && !(sides[win] || []).length)) continue;
+        const finish = str(seg.result.finish, 300);
+        sides.forEach((side, i) => {
+          if (!Array.isArray(side)) return;
+          const oppIds = sides.filter((_, j) => j !== i).flat().filter(w => names[w]);
+          if (!oppIds.length) return;
+          const opponent = oppIds.map(w => names[w]).join(' & ');
+          const result = win === -1 ? 'Draw' : i === win ? 'Win' : 'Loss';
+          for (const w of side) {
+            if (!names[w]) continue;
+            const k = keyOf(ev.id, seg.id, w); want.add(k);
+            const row = byKey.get(k), oppJson = JSON.stringify(oppIds);
+            if (!row) stmts.push(ins.bind(ev.id, seg.id, w, ev.date || '', str(ev.title, 100), result, str(opponent, 200), oppJson, finish, now));
+            else if (!row.locked && !row.deleted && (row.result !== result || row.opponent !== str(opponent, 200) || row.opp_ids !== oppJson || row.finish !== finish || row.date !== (ev.date || '') || row.show !== str(ev.title, 100)))
+              stmts.push(upd.bind(ev.date || '', str(ev.title, 100), result, str(opponent, 200), oppJson, finish, now, row.id));
+          }
+        });
+      }
+    }
+    const del = env.DB.prepare('DELETE FROM match_results WHERE id = ?');
+    for (const r of existing) if (!want.has(keyOf(r.event_id, r.seg_id, r.wrestler_id)) && (!r.locked || r.deleted)) stmts.push(del.bind(r.id));
+    for (let i = 0; i < stmts.length; i += 40) await env.DB.batch(stmts.slice(i, i + 40));
+  } catch (e) { lastResultSync = 0; console.error('result sync failed', e && e.message); }
+}
+const resultOut = r => ({ id: r.id, w: r.wrestler_id, event: r.event_id, seg: r.seg_id, date: r.date, show: r.show, result: r.result, opponent: r.opponent, opp: (() => { try { return JSON.parse(r.opp_ids); } catch (_) { return []; } })(), finish: r.finish, locked: !!r.locked });
+// Earlier meetings between two sides, newest first (at most 5), for the announcers.
+async function meetingsBetween(env, sideA, sideB, beforeDate, exceptEvent) {
+  if (!sideA.length || !sideB.length) return [];
+  const { results } = await env.DB.prepare(`SELECT * FROM match_results WHERE deleted = 0 AND wrestler_id IN (${sideA.map(() => '?').join(',')}) ORDER BY date DESC, id DESC LIMIT 300`).bind(...sideA).all();
+  const B = new Set(sideB), seen = new Set(), out = [];
+  for (const r of results) {
+    if (exceptEvent && r.event_id === exceptEvent) continue;
+    if (beforeDate && r.date > beforeDate) continue;
+    const opp = resultOut(r).opp;
+    if (!opp.some(x => B.has(x))) continue;
+    const k = r.event_id + '|' + r.seg_id; if (seen.has(k)) continue; seen.add(k);
+    out.push(r); if (out.length >= 5) break;
+  }
+  return out;
+}
+function meetingLine(r, nameOf) {
+  const verb = r.result === 'Win' ? 'beat' : r.result === 'Loss' ? 'lost to' : 'drew with';
+  return `${nameOf(r.wrestler_id)} ${verb} ${r.opponent}${r.finish ? ` (${String(r.finish).slice(0, 120)})` : ''} on ${r.show || 'a show'}${r.date ? `, ${r.date}` : ''}`;
+}
+async function meetingLines(env, sides, beforeDate, exceptEvent, nameOf) {
+  const real = sides.filter(x => x.length), seen = new Set(), lines = [];
+  for (let i = 0; i < real.length; i++) for (let j = i + 1; j < real.length; j++) {
+    for (const r of await meetingsBetween(env, real[i], real[j], beforeDate, exceptEvent)) {
+      const k = r.event_id + '|' + r.seg_id; if (seen.has(k)) continue; seen.add(k); lines.push([r.date, meetingLine(r, nameOf)]);
+    }
+  }
+  return lines.sort((a, b) => (b[0] || '').localeCompare(a[0] || '')).slice(0, 5).map(x => x[1]);
+}
+async function resultRoutes(request, env, rid) {
+  const user = await getUser(request, env, true);
+  if (!user.isAdmin) throw new HttpError(403, 'Results are for the CEO only.');
+  await ensureResults(env);
+  const id = parseInt(rid, 10);
+  const row = id ? await env.DB.prepare('SELECT * FROM match_results WHERE id = ?').bind(id).first() : null;
+  if (!row) throw new HttpError(404, 'Result not found');
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('UPDATE match_results SET deleted = 1, locked = 1, updated_at = ? WHERE id = ?').bind(Date.now(), id).run();
+    return json({ ok: true });
+  }
+  if (request.method === 'PUT') {
+    const b = await readJson(request, 4 * 1024);
+    const result = RESULTS.includes(b.result) ? b.result : row.result;
+    await env.DB.prepare('UPDATE match_results SET result = ?, opponent = ?, finish = ?, locked = 1, updated_at = ? WHERE id = ?')
+      .bind(result, str(b.opponent, 200) || row.opponent, str(b.finish, 300), Date.now(), id).run();
+    return json({ ok: true, row: resultOut(await env.DB.prepare('SELECT * FROM match_results WHERE id = ?').bind(id).first()) });
+  }
+  throw new HttpError(405, 'Method not allowed');
+}
+
 async function storyRoutes(request, env, id) {
   const user = await getUser(request, env, true);
   if (!user.isAdmin) throw new HttpError(403, 'Storylines are for the CEO only.');
@@ -505,7 +618,9 @@ async function storyRoutes(request, env, id) {
     const stories = {};
     for (const r of results) { try { stories[r.id] = JSON.parse(r.data); } catch (_) { /* skip bad row */ } }
     try { await backfillFeuds(env, stories); } catch (_) { /* best effort */ }
-    return json({ stories });
+    await syncResults(env);
+    const { results: hist } = await env.DB.prepare('SELECT * FROM match_results WHERE deleted = 0 ORDER BY date DESC, id DESC LIMIT 3000').all();
+    return json({ stories, history: hist.map(resultOut) });
   }
   if (request.method === 'PUT' && id) {
     const w = await env.DB.prepare('SELECT id FROM wrestlers WHERE id = ?').bind(id).first();
@@ -913,6 +1028,7 @@ function aiPrompt(b, profiles, nameOf) {
     b.champions.length ? `CURRENT CHAMPIONS: ${b.champions.join('; ')}.` : '',
     profiles ? `WRESTLERS:\n${profiles}` : '',
     levelGuide(b, nameOf),
+    b.meetings && b.meetings.length ? `PREVIOUS MEETINGS BETWEEN THESE COMPETITORS (true history, newest first). The announcers may mention it naturally while previewing and calling the match, for example who won last time or how many times they have met; never invent any other history:\n${b.meetings.map(t => '- ' + t).join('\n')}` : '',
     b.earlier.length ? `EARLIER IN TONIGHT'S SHOW (the announcers may refer back to these; do not retell them):\n${b.earlier.map(t => '- ' + t).join('\n')}` : ''
   ].filter(Boolean).join('\n\n');
   let task;
@@ -921,7 +1037,7 @@ function aiPrompt(b, profiles, nameOf) {
     task = `TASK: Write the SHOW INTRO for tonight's broadcast, about ${words} words.
 Order: (1) the show logo and theme music open the show (use the intro_music cue on that first beat); (2) the cameras pan across the crowd in the venue, vivid and specific to this venue; (3) Mike Johnson welcomes the television audience to the venue and says what a show USCW has in store, with Earl chiming in (Cindy Maxwell may add a short, formal welcome of her own); (4) Mike runs down the card, and EVERY match on it gets its own 2 to 3 sentences from the two announcers telling the viewer why they should care: Mike introduces the match (who, and what is at stake), and Earl or Mike adds the reason it matters, drawn only from the facts given for it (title on the line, the feud and what it is about, recent wins and losses, the CEO's show notes). Alternate who leads, let Earl and Mike disagree about who has the edge, and give the MAIN EVENT the biggest build-up. Never say who wins and never invent a history that is not given; (5) for each scheduled appearance, a line like "Also scheduled to be here tonight is ..." with a short blurb of that wrestler's current storyline; (6) a punchy closing line that throws to the first match.
 Never reveal who wins any match tonight.
-THE CARD:\n${b.card.matches.map(t => '- ' + t).join('\n') || '- (no matches announced)'}
+THE CARD:\n${b.card.matches.map((t, i) => '- ' + t + ((b.card.meet && b.card.meet[i] && b.card.meet[i].length) ? ` [PREVIOUS MEETINGS, true history the announcers may mention: ${b.card.meet[i].join('; ')}]` : '')).join('\n') || '- (no matches announced)'}
 SCHEDULED APPEARANCES:\n${b.card.appearances.map(a => `- ${a.name}: ${a.facts.join(' ')}`).join('\n') || '- (none)'}
 ${base ? `A plain draft already exists. Rewrite it so it reads like a real broadcast, keep every fact in it, and do not drop any match or appearance:\n${base}` : ''}`;
   } else if (b.kind === 'polish') {
@@ -1026,7 +1142,7 @@ async function aiDraft(request, env) {
   if (raw.levels && typeof raw.levels === 'object') for (const [k, v] of Object.entries(raw.levels)) if (ID_RE.test(k) && LEVELS.includes(v)) levels[k] = v;
   const b = {
     kind, tier: raw.tier === 'lite' ? 'lite' : 'main',
-    show: { title: aiStr(sh.title, 100), date: aiStr(sh.date, 10), venue: aiStr(sh.venue, 100), city: aiStr(sh.city, 100), ple: !!sh.ple, notes: aiStr(sh.notes, 600) },
+    show: { id: ID_RE.test(String(sh.id || '')) ? String(sh.id) : '', title: aiStr(sh.title, 100), date: aiStr(sh.date, 10), venue: aiStr(sh.venue, 100), city: aiStr(sh.city, 100), ple: !!sh.ple, notes: aiStr(sh.notes, 600) },
     segment: { type, title: aiStr(s.title, 100), stip: aiStr(s.stip, 100), desc: aiStr(s.desc, 2000), length: cleanLength(s.length, type), sides },
     result: { winner: Number.isInteger(res.winner) && res.winner >= -1 && res.winner < sides.length ? res.winner : -1, finish: aiStr(res.finish, 300) },
     earlier: aiList(raw.earlier, 14, 300), champions: aiList(raw.champions, 6, 200),
@@ -1034,6 +1150,7 @@ async function aiDraft(request, env) {
     baseWords: 0, main: !!raw.main, levels,
     card: {
       matches: aiList(card.matches, 12, 400),
+      sides: (Array.isArray(card.sides) ? card.sides : []).slice(0, 12).map(m => (Array.isArray(m) ? m : []).slice(0, 8).map(a => aiIds(a).slice(0, 8))),
       appearances: (Array.isArray(card.appearances) ? card.appearances : []).slice(0, 12)
         .map(a => ({ name: aiStr(a && a.name, 80), facts: aiList(a && a.facts, 6, 400) })).filter(a => a.name)
     }
@@ -1049,6 +1166,12 @@ async function aiDraft(request, env) {
   const names = {}; for (const r of rows) { try { names[r.id] = JSON.parse(r.data).ringName; } catch (_) { /* skip */ } }
   const nameOf = id => names[id] || 'Unknown Wrestler';
   const profiles = rows.map(r => { try { return aiProfile(r, facts, b.levels); } catch (_) { return ''; } }).filter(Boolean).join('\n');
+  b.meetings = []; b.card.meet = [];
+  try {
+    await syncResults(env);
+    if (kind === 'segment' && type === 'match') b.meetings = await meetingLines(env, sides, b.show.date, b.show.id, nameOf);
+    if (kind === 'intro') for (const m of b.card.sides) b.card.meet.push(await meetingLines(env, m, b.show.date, b.show.id, nameOf));
+  } catch (e) { console.error('meetings failed', e && e.message); }
   const prompt = aiPrompt(b, profiles, nameOf);
   const words = kind === 'polish' ? Math.max(120, b.baseWords) : b.segment.length * 200;
   const mainModel = env.GEMINI_MODEL_MAIN || GEMINI_MODEL_MAIN, liteModel = env.GEMINI_MODEL_LITE || GEMINI_MODEL_LITE, backupModel = env.GEMINI_MODEL_FALLBACK || GEMINI_MODEL_FALLBACK;
@@ -1182,6 +1305,8 @@ async function route(request, env) {
   if (m === 'POST' && path === '/api/ai/draft') return aiDraft(request, env);
   const bm = path.match(/^\/api\/submissions(?:\/([A-Za-z0-9_-]{1,64}))?$/);
   if (bm) return submissionRoutes(request, env, bm[1]);
+  const rm = path.match(/^\/api\/story-result\/(\d{1,12})$/);
+  if (rm) return resultRoutes(request, env, rm[1]);
   const sm = path.match(/^\/api\/story(?:\/([A-Za-z0-9_-]{1,64}))?$/);
   if (sm) return storyRoutes(request, env, sm[1]);
 
