@@ -528,7 +528,7 @@ const eventOut = (r, admin) => {
 
 /* ---------------- live show script ---------------- */
 // Viewers start the show themselves. The Worker only hands out text once enough time has passed since they pressed
-// Start, so nobody can read ahead. Pacing comes from the text itself (about 150 words a minute) plus the CEO's pauses.
+// Start, so nobody can read ahead. Pacing comes from the text itself (about 200 words a minute) plus the CEO's pauses.
 const TZ_MAP = {
   ET: 'America/New_York', EST: 'America/New_York', EDT: 'America/New_York',
   CT: 'America/Chicago', CST: 'America/Chicago', CDT: 'America/Chicago',
@@ -556,7 +556,7 @@ function zonedToUtc(date, time, tz) {
 function releaseAt(e) {
   try { return zonedToUtc(e.date, e.time, tzName(e.tz)); } catch { return 0; }
 }
-const REVEAL_WPS = 2.5, SEG_GAP = 4;
+const REVEAL_WPS = 3.3, BREATH = 0.25, SEG_GAP = 4;   // must match the watch page
 function buildTimeline(data) {
   const beats = []; let t = 0, first = true;
   for (const s of data.segments || []) {
@@ -566,7 +566,8 @@ function buildTimeline(data) {
     first = false;
     list.forEach((b, j) => {
       const words = (b.text.match(/\S+/g) || []).length;
-      const dur = Math.max(1.5, words / REVEAL_WPS) + (b.pause || 0);
+      const nums = /^[\s.1-4]+$/.test(b.text) ? b.text.match(/[1-4]/g) : null;   // a pin count: one second per number, the 2 of a kickout hangs about half a second
+      const dur = (nums ? (nums.length - 1) + (nums[nums.length - 1] === '2' ? 0.5 : 0.1) : Math.max(1.5, words / REVEAL_WPS) + (b.text.match(/[.!?][”"')\]]*(?=\s)/g) || []).length * BREATH) + (b.pause || 0);
       beats.push({
         t, dur, text: b.text, cue: b.cue || '', pause: b.pause || 0,
         seg: j === 0 ? { id: s.id, type: s.type, title: s.title || '', stip: s.stip || '', sides: s.sides || [], length: s.length } : null
@@ -817,7 +818,7 @@ function aiPrompt(b, profiles, nameOf) {
   const show = b.show, seg = b.segment;
   const sideNames = side => side.map(nameOf).join(' & ');
   const sidesTxt = seg.sides.filter(s => s.length).map(sideNames).join(' vs. ');
-  const words = seg.length * 150;
+  const words = seg.length * 200;
   const head = [
     `SHOW: ${show.title || 'Monday Night Mayhem'}${show.ple ? ' (premium live event)' : ''}${show.date ? ', ' + show.date : ''}${show.venue || show.city ? ', live from ' + [show.venue, show.city].filter(Boolean).join(', ') : ''}.`,
     show.notes ? `CEO's show notes: ${show.notes}` : '',
@@ -958,7 +959,7 @@ async function aiDraft(request, env) {
   const nameOf = id => names[id] || 'Unknown Wrestler';
   const profiles = rows.map(r => { try { return aiProfile(r, facts); } catch (_) { return ''; } }).filter(Boolean).join('\n');
   const prompt = aiPrompt(b, profiles, nameOf);
-  const words = kind === 'polish' ? Math.max(120, b.baseWords) : b.segment.length * 150;
+  const words = kind === 'polish' ? Math.max(120, b.baseWords) : b.segment.length * 200;
   const mainModel = env.GEMINI_MODEL_MAIN || GEMINI_MODEL_MAIN, liteModel = env.GEMINI_MODEL_LITE || GEMINI_MODEL_LITE, backupModel = env.GEMINI_MODEL_FALLBACK || GEMINI_MODEL_FALLBACK;
   // Cheaper calls: lite, then 3.1, then the stronger model. Stronger calls: stronger, then lite, then 3.1.
   const chain = [...new Set(b.tier === 'lite' ? [liteModel, backupModel, mainModel] : [mainModel, liteModel, backupModel])];

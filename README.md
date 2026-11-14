@@ -141,7 +141,7 @@ npx serve docs -p 8080               # http://localhost:8080
 
 Each segment can carry a script of beats (text, optional pause, optional sound cue). When a show's start time arrives, a
 **Watch the show** button appears on its page. Each viewer starts their own run; the Worker releases the text at roughly
-150 words a minute plus the CEO's pauses, so nobody can read ahead, and promos and backstage segments appear only at that
+200 words a minute plus the CEO's pauses, so nobody can read ahead, and promos and backstage segments appear only at that
 moment. The CEO can preview a show at ×4–×16 speed from the Start screen. The show's start time uses its time zone field
 (ET, CT, MT, PT or a name like `America/Chicago`; blank means Eastern). Viewing records live in a small `show_views` table
 that the Worker creates by itself and clears after 3 days.

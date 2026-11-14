@@ -34,7 +34,7 @@ const PLE_MONTHS = [
 ];
 const CUES = [['','No sound'],['intro_music','Show intro music'],['bell','Bell'],['crowd_pop','Crowd pop'],['crowd_boo','Crowd boos'],['crowd_chant','Crowd chant'],['mat_slam','Slam on the mat'],['pin_count','Pin count'],['chair_shot','Chair shot'],['entrance','Entrance theme…']];
 const LENGTHS = [[1,'Short · 1 min'],[3,'Medium · 3 min'],[6,'Long · 6 min'],[10,'Epic · 10 min']];
-const WORDS_PER_MIN = 150;
+const WORDS_PER_MIN = 200, REVEAL_WPS = 3.3, BREATH = 0.25;   // reveal pace: must match the Worker's timeline
 const defLength = type => type==='match'?6:type==='show_intro'?4:3;
 const wordCount = t => (String(t||'').trim().match(/\S+/g)||[]).length;
 const SEG_TYPES = {show_intro:'Show Intro', match:'Match', promo:'Promo / Interview', backstage:'Backstage Segment', angle:'Angle / Brawl', ceremony:'Ceremony / Announcement', other:'Other'};
@@ -790,6 +790,16 @@ function sndCount(n,pin){
   sndPlay('count_'+n);
 }
 
+// When each character of a beat appears (ms): an even stream at REVEAL_WPS words a second, with a short breath after each sentence.
+function revealSchedule(text){
+  const words=(text.match(/\S+/g)||[]).length, speech=Math.max(1.5,words/REVEAL_WPS)*1000, len=text.length;
+  const stops=[]; const re=/[.!?][”"')\]]*(?=\s)/g; let m;
+  while((m=re.exec(text))) stops.push(m.index+m[0].length);
+  const times=new Array(len); let si=0, extra=0;
+  for(let i=0;i<len;i++){ while(si<stops.length&&i>=stops[si]){ extra+=BREATH*1000; si++; } times[i]=(i/len)*speech+extra; }
+  return {times,total:speech+stops.filter(x=>x<len).length*BREATH*1000};
+}
+
 function pageWatch(id){
   const e=S.events[id];
   if(!e||!(e.published||S.isCEO)) return h('div',{class:'empty'},'Show not found.');
@@ -911,16 +921,23 @@ function pageWatch(id){
           showNum(0);
           return;
         }
-        const words=(b.text||'').split(/\s+/).filter(Boolean);
-        const total=Math.max(1.5,words.length/2.5)*1000/speed;
-        let n=0; const step=Math.max(25,total/Math.max(1,words.length));
+        const text=b.text||'';
         const finishBeat=()=>{ shownOne(); later(()=>{ st.busy=false; playNext(); },(b.pause||0)*1000/speed); };
-        if(!words.length){ finishBeat(); return; }
-        const iv=setInterval(()=>{
-          if(stopped){ clearInterval(iv); return; }
-          const was2=nearBottom(); n++; p.textContent=words.slice(0,n).join(' '); follow(was2&&n===words.length);
-          if(n>=words.length){ clearInterval(iv); timers.delete(iv); finishBeat(); }
-        },step); timers.add(iv);
+        if(!text.trim()){ finishBeat(); return; }
+        // An even stream of letters. The rest of the text sits invisible so lines don't re-wrap as words grow.
+        const sched=revealSchedule(text);
+        const vis=h('span',{}), rest=h('span',{style:'visibility:hidden'},text);
+        p.append(vis,rest);
+        const t0=performance.now(); let shown=0;
+        const frame=now=>{
+          if(stopped) return;
+          const el=(now-t0)*speed; let k=shown;
+          while(k<text.length&&sched.times[k]<=el) k++;
+          if(k!==shown){ shown=k; vis.textContent=text.slice(0,k); rest.textContent=text.slice(k); }
+          if(k>=text.length){ follow(nearBottom()); finishBeat(); return; }
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
       };
       if(hold>0) later(runBeat,hold); else runBeat();
     }
