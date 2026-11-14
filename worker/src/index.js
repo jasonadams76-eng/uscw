@@ -861,9 +861,9 @@ ${seg.desc ? `CEO's brief (follow it; if it contains actual dialogue or text fro
   return `${head}\n\n${task}`;
 }
 
-async function geminiCall(env, model, system, prompt, words) {
+async function geminiCall(env, model, system, prompt, words, timeoutMs = 50000) {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 50000);
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let res;
   try {
     res = await fetch(`${env.GEMINI_BASE_URL || GEMINI_BASE}${encodeURIComponent(model)}:generateContent`, {
@@ -890,22 +890,23 @@ async function geminiCall(env, model, system, prompt, words) {
       })
     });
   } catch (e) {
-    throw Object.assign(new Error(e && e.name === 'AbortError' ? 'Gemini took too long to answer.' : 'Could not reach Gemini.'), { kind: 'upstream' });
+    const to = !!(e && e.name === 'AbortError');
+    throw Object.assign(new Error(to ? 'Gemini took too long to answer.' : 'Could not reach Gemini.'), { kind: 'upstream', code: to ? 'timeout' : 'network' });
   } finally { clearTimeout(timer); }
   if (!res.ok) {
-    const kind = res.status === 429 ? 'quota' : (res.status === 404 || res.status === 400) ? 'model' : 'upstream';
+    const kind = res.status === 429 ? 'quota' : (res.status === 404 || res.status === 400) ? 'model' : (res.status === 401 || res.status === 403) ? 'auth' : 'upstream';
     let detail = ''; try { detail = (await res.json()).error.message || ''; } catch (_) { /* no body */ }
     console.error('gemini', model, res.status, detail.slice(0, 300));
-    throw Object.assign(new Error(`Gemini (${model}) answered ${res.status}.`), { kind });
+    throw Object.assign(new Error(`Gemini (${model}) answered ${res.status}.`), { kind, code: res.status });
   }
   const data = await res.json();
   const cand = data.candidates && data.candidates[0];
   const text = cand && cand.content && Array.isArray(cand.content.parts) ? cand.content.parts.map(p => p.text || '').join('') : '';
-  if (!text) throw Object.assign(new Error('Gemini declined to write this one. Try changing the brief, then draft again.'), { kind: 'blocked' });
+  if (!text) throw Object.assign(new Error('Gemini declined to write this one. Try changing the brief, then draft again.'), { kind: 'blocked', code: 'blocked' });
   let parsed;
   try { parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (_) { parsed = null; }
   const beats = parsed && Array.isArray(parsed.beats) ? parsed.beats : null;
-  if (!beats) throw Object.assign(new Error('Gemini’s reply could not be read. Please try again.'), { kind: 'badreply' });
+  if (!beats) throw Object.assign(new Error('Gemini’s reply could not be read. Please try again.'), { kind: 'badreply', code: 'badreply' });
   return beats;
 }
 
@@ -954,26 +955,39 @@ async function aiDraft(request, env) {
   const mainModel = env.GEMINI_MODEL_MAIN || GEMINI_MODEL_MAIN, liteModel = env.GEMINI_MODEL_LITE || GEMINI_MODEL_LITE, backupModel = env.GEMINI_MODEL_FALLBACK || GEMINI_MODEL_FALLBACK;
   // Cheaper calls: lite, then 3.1, then the stronger model. Stronger calls: stronger, then lite, then 3.1.
   const chain = [...new Set(b.tier === 'lite' ? [liteModel, backupModel, mainModel] : [mainModel, liteModel, backupModel])];
-  const t0 = Date.now();
-  let model = chain[0], beats = null, lastErr = null, busy = false;
+  const t0 = Date.now(), tried = [];
+  let model = chain[0], beats = null, lastErr = null;
+  const why = c => c === 503 ? 'busy (503)' : c === 429 ? 'rate or daily limit reached (429)' : c === 404 ? 'model name not found (404)' : c === 400 ? 'request rejected (400)'
+    : c === 401 || c === 403 ? `key not accepted (${c})` : typeof c === 'number' ? `server error (${c})` : c === 'timeout' ? 'timed out' : c === 'network' ? 'could not be reached'
+    : c === 'blocked' ? 'declined to write it' : c === 'badreply' ? 'sent an unreadable reply' : 'failed';
+  const short = m => String(m).replace(/^gemini-/, '');
+  outer:
   for (let i = 0; i < chain.length && !beats; i++) {
     for (let attempt = 0; attempt < 2 && !beats; attempt++) {
-      if (i > 0 || attempt > 0) { if (Date.now() - t0 > 75000) break; }
+      const left = 100000 - (Date.now() - t0);
+      if (left < 8000) break outer;   // out of time: stop and report what happened
+      model = chain[i];
       try {
-        model = chain[i];
-        beats = await geminiCall(env, model, AI_SYSTEM, prompt, words);
+        beats = await geminiCall(env, model, AI_SYSTEM, prompt, words, Math.min(50000, left));
       } catch (e) {
         lastErr = e;
-        if (e.kind === 'upstream') { busy = true; if (attempt === 0) { await new Promise(r => setTimeout(r, 2000)); continue; } }
-        break;  // quota, bad model name, unreadable reply: move to the next model; a blocked prompt is final (below)
+        const retried = attempt === 0 && e.kind === 'upstream' && e.code !== 'timeout';
+        tried.push([short(model), why(e.code)]);
+        if (retried) { await new Promise(r => setTimeout(r, 2000)); continue; }
+        if (e.kind === 'blocked' || e.kind === 'auth') break outer;  // would fail the same way everywhere
+        break;  // quota, bad model name, timeout, unreadable reply: next model
       }
     }
-    if (!beats && lastErr && lastErr.kind === 'blocked') break;
-    if (!beats && Date.now() - t0 > 75000) break;
   }
   if (!beats) {
-    if (lastErr && lastErr.kind !== 'blocked' && busy) throw new HttpError(503, 'Gemini is busy right now and none of the backup models could answer. Try again in a minute.');
-    throw aiFail(lastErr || new Error('The AI writer failed.'));
+    const byModel = new Map();
+    for (const [m, w] of tried) byModel.set(m, [...(byModel.get(m) || []), w]);
+    const trail = tried.length ? [...byModel].map(([m, ws]) => `${m}: ${ws.every(x => x === ws[0]) ? ws[0] + (ws.length > 1 ? ' twice' : '') : ws.join(', then ')}`).join(' · ') : 'no model could be tried in time';
+    console.error('gemini chain failed', trail);
+    if (lastErr && lastErr.kind === 'blocked') throw aiFail(lastErr);
+    if (lastErr && lastErr.kind === 'auth') throw new HttpError(502, `Gemini did not accept the API key (${trail}). Check the GEMINI_API_KEY secret and that the key may use these models.`);
+    const allQuota = tried.length > 0 && tried.every(t => /limit reached/.test(t[1]));
+    throw new HttpError(allQuota ? 429 : 503, `Gemini could not write this. ${trail}. ${allQuota ? 'Try again later (daily limits reset at midnight Pacific).' : 'Try again in a minute.'}`);
   }
   const fellBack = model !== chain[0];
   const ok = new Set(ids);
