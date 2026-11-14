@@ -238,7 +238,9 @@ function niceDate(iso,dow){
   const [y,m,d]=iso.split('-').map(Number), dt=new Date(y,m-1,d);
   return (dow?dt.toLocaleDateString('en-US',{weekday:'long'})+', ':'')+dt.toLocaleDateString('en-US',{month:'long'})+' '+ordinal(d);
 }
-function storyOf(id){ const s=(S.story&&S.story[id])||{}; return {results:s.results||[],feuds:s.feuds||[],notes:s.notes||[]}; }
+function storyOf(id){ const s=(S.story&&S.story[id])||{}; return {results:s.results||[],feuds:s.feuds||[],notes:s.notes||[],level:s.level||''}; }
+const LEVEL_OPTS=[['','Not set'],['jobber','Jobber'],['lower','Lower Card'],['mid','Mid Card'],['star','Superstar']];
+const LEVEL_HINT={jobber:'Fodder for the roster. The announcers have a low opinion of him.',lower:'Trying to prove himself or cannot get over the hump. The announcers are unsure of him.',mid:'A respected competitor and a contender for the U.S. or Tag titles.',star:'Cream of the crop, over with the fans. The announcers heap on the praise.','':'No special treatment from the announcers.'};
 async function saveStory(id, mutate){
   const st=JSON.parse(JSON.stringify(storyOf(id))); mutate(st);
   const res=await api('PUT','/story/'+id,st);
@@ -316,12 +318,18 @@ function whyCare(sg,d,main){
   });
   const stakes=matchStakes(sg), title=(sg.title||'').trim(), stip=(sg.stip||'').trim().replace(/\s+match$/i,'');
   const reason=out.slice(0,2).join(' ');
+  // Announcer opinion from each wrestler's private level, expressed as opinion only (never the level itself).
+  const lv=firsts.map(w=>storyOf(w).level);
+  const rk={jobber:0,lower:1,mid:2,star:3};
+  const top=lv.filter(x=>x).sort((a,b)=>rk[b]-rk[a])[0];
+  const allLow=lv.length>1&&lv.every(x=>x==='jobber');
+  const attitude=allLow?'':top==='star'?pick(['And make no mistake, we are looking at a genuine star here.','One of the biggest names in this company is in this one.']):top==='mid'?pick(['Both are very capable competitors, and one win here could change a lot.','I respect what these two bring to the ring.']):top==='lower'?pick(['One of them still has something to prove.','A big win here could turn things around.']):top==='jobber'?pick(['Let us be honest, not everyone in this ring has had much to cheer about lately.']):'';
   let close;
   if(title&&/\b(title|championship|belt|titles)\b/i.test(title)) close=pick(['With the '+title+' on the line, nobody can afford one mistake.','When the '+title+' is at stake, every second counts.']);
   else if(stip) close=pick(['A '+stip+' match has no place to hide, and that is why you do not blink.','Put them in a '+stip+' match and anything can happen.']);
   else close=pick(['You do not want to miss a second of this one.','Mark my words, this one will be talked about.']);
   const open=main?pick(['Folks, this is the one everybody came to see.','This is what the whole night has been building toward.']):pick(['Mike, I like this one.','Do not sleep on this match.','Here is why you stay tuned for this one.']);
-  return open+(reason?' '+reason:'')+' '+close;
+  return open+(reason?' '+reason:'')+(attitude?' '+attitude:'')+' '+close;
 }
 // The built-in Show Intro writer: opening logo + music, crowd pan, Mike Johnson's welcome and the card rundown.
 function draftIntro(d){
@@ -432,7 +440,7 @@ function aiPayload(d,idx){
   const p={kind:isIntro?'intro':'segment', tier:aiTier(d,idx),
     show:{title:d.title,date:d.date,venue:d.venue,city:d.city,ple:!!d.ple,notes:d.notes},
     segment:{type:s.type,title:s.title,stip:s.stip,desc:s.desc,length:s.length,sides:s.sides.map(x=>x.filter(w=>S.wrestlers[w]))},
-    wrestlers:ids, facts, earlier:aiEarlier(d,idx),
+    wrestlers:ids, facts, levels:Object.fromEntries(ids.map(w=>[w,storyOf(w).level]).filter(x=>x[1])), earlier:aiEarlier(d,idx),
     champions:S.champs.filter(c=>c.holders.some(id=>S.wrestlers[id])).map(c=>c.name+': '+andList(c.holders.filter(id=>S.wrestlers[id]).map(wname)))};
   if(s.type==='match'){ const ms=d.segments.filter(x=>x.type==='match'&&x.sides.some(y=>y.length)); p.main=ms.length>1&&ms[ms.length-1]===s; }
   if(s.type==='match') p.result={winner:Number.isInteger(s.result&&s.result.winner)?s.result.winner:-1,finish:(s.result&&s.result.finish)||''};
@@ -555,6 +563,10 @@ function storyPanel(id){
         h('input',{type:'text',placeholder:'How (optional)',oninput:e=>{r.how=e.target.value;}}),
         h('button',{type:'button',class:'btn sm',onclick:()=>{ if(!r.opponent.trim()){toast('Enter the opponent.',true);return;} mut(s=>{s.results.unshift({id:uid8(),date:r.date,show:r.show.trim(),opponent:r.opponent.trim(),result:r.result,how:r.how.trim()});},'Result added.'); }},'Add result'),
         h('datalist',{id:'story-opps-'+id},rosterOpts.map(([k,x])=>h('option',{value:x.ringName})))));
+    // superstar level (CEO only; never shown to viewers or named on air)
+    box.append(h('h3',{},'Superstar Level'),
+      h('div',{class:'story-add'},h('select',{onchange:e=>mut(s=>{s.level=e.target.value;},'Level saved.')},LEVEL_OPTS.map(([v,l])=>h('option',{value:v,selected:st.level===v},l)))),
+      h('div',{class:'hint'},(LEVEL_HINT[st.level]||'')+' Private: the announcers show it through their opinions but never say the level.'));
     // feuds
     const f={with:'',reason:''};
     box.append(h('h3',{},'Current feuds'),

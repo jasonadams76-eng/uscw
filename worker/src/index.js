@@ -417,6 +417,17 @@ function ensureStory(env) {
   return storyReady;
 }
 const RESULTS = ['Win', 'Loss', 'Draw', 'No Contest'];
+// Superstar Level: an insider ranking only the CEO sees. The AI is told how the announcers feel, never the label itself.
+const LEVELS = ['jobber', 'lower', 'mid', 'star'];
+const LEVEL_RANK = { jobber: 0, lower: 1, mid: 2, star: 3 };
+const LEVEL_ATTITUDE = {
+  jobber: 'the announcers have a low opinion of him: they mention his lack of success, expect him to lose and do not rate his abilities',
+  lower: 'the announcers are unsure about him: he is trying to prove himself or cannot quite get over the hump, and they may or may not believe he will ever win consistently',
+  mid: 'the announcers respect him as a competitor, occasionally praise his talent, and see him as a contender for the United States Heavyweight or Tag Team titles',
+  star: 'the announcers heap praise on him and regularly mention what a big star he is: he is over with the fans and a natural contender for the World Heavyweight Championship'
+};
+// Words that must never reach the air.
+const BANNED_ON_AIR = /\b(jobbers?|lower[\s-]?card|mid[\s-]?card(?:ers?)?|upper[\s-]?card|card level|superstar[\s-]?(?:level|tier)|star[\s-]?level|enhancement talent|(?:do|does|doing|did)\s+the\s+job|put\s+(?:him|them)\s+over)\b/i;
 const isoDate = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
 const list = (v, n) => (Array.isArray(v) ? v : []).slice(0, n).map(x => (x && typeof x === 'object' ? x : {}));
 const sid = x => (typeof x.id === 'string' && ID_RE.test(x.id) ? x.id : randHex(6));
@@ -431,10 +442,11 @@ function cleanStory(b) {
     })).filter(x => x.with),
     notes: list(b.notes, 60).map(x => ({
       id: sid(x), date: isoDate(x.date), show: str(x.show, 100), text: str(x.text, 600)
-    })).filter(x => x.text)
+    })).filter(x => x.text),
+    level: LEVELS.includes(b.level) ? b.level : ''
   };
 }
-const emptyStory = () => ({ results: [], feuds: [], notes: [] });
+const emptyStory = () => ({ results: [], feuds: [], notes: [], level: '' });
 async function loadStory(env, id) {
   const r = await env.DB.prepare('SELECT data FROM wrestler_story WHERE id = ?').bind(id).first();
   if (!r) return emptyStory();
@@ -859,7 +871,7 @@ const aiStr = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
 const aiList = (v, n, m) => (Array.isArray(v) ? v : []).slice(0, n).map(x => aiStr(x, m)).filter(Boolean);
 const aiIds = v => (Array.isArray(v) ? v : []).filter(x => typeof x === 'string' && ID_RE.test(x));
 
-function aiProfile(r, facts) {
+function aiProfile(r, facts, levels) {
   const w = JSON.parse(r.data), mv = w.moves || {};
   const moves = MOVE_KEYS.map(k => (Array.isArray(mv[k]) && mv[k].length ? `${MOVE_LABELS[k]}: ${mv[k].slice(0, 5).join('; ')}` : '')).filter(Boolean).join(' | ');
   const f = w.finisher || {};
@@ -868,11 +880,28 @@ function aiProfile(r, facts) {
     w.bio ? `  Bio: ${String(w.bio).slice(0, 700)}` : '',
     f.name ? `  Finisher: ${f.name}${f.desc ? ' — ' + String(f.desc).slice(0, 300) : ''}` : '',
     moves ? `  Moves: ${moves.slice(0, 600)}` : '',
+    levels && LEVEL_ATTITUDE[levels[r.id]] ? `  Announcer attitude (private, never say why): ${LEVEL_ATTITUDE[levels[r.id]]}.` : '',
     ...(facts[r.id] || []).map(t => `  Storyline: ${t}`)
   ];
   return lines.filter(Boolean).join('\n');
 }
 
+function levelGuide(b, nameOf) {
+  const lv = b.levels || {};
+  if (!Object.keys(lv).length) return '';
+  const lines = [
+    'ANNOUNCER ATTITUDE (secret from viewers): some wrestlers carry a private "Announcer attitude" line in their profile. Let it colour how Mike, Earl, Cindy and the interviewers talk about that wrestler, through opinion and tone only. NEVER mention, hint at or name any ranking, level, tier, card position or category, and never use words such as jobber, lower card, mid card, upper card, enhancement talent or "doing the job". Viewers must only hear natural opinions.',
+    'If two wrestlers share the same low standing, drop the dismissive tone for that match. Titles: the World Heavyweight Championship suits the most over stars, the United States Heavyweight and Tag Team titles suit solid contenders; if someone holds or wins a title well above how the announcers rate him, let them be surprised.'
+  ];
+  const seg = b.segment || {}, res = b.result || {};
+  if (seg.type === 'match' && b.kind === 'segment' && res.winner >= 0 && seg.sides[res.winner]) {
+    const rank = side => Math.max(-1, ...side.map(id => (id in lv ? LEVEL_RANK[lv[id]] : -1)));
+    const ranks = seg.sides.map(rank), w = ranks[res.winner], l = Math.max(...ranks.filter((_, i) => i !== res.winner));
+    if (w >= 0 && l >= 0 && l - w >= 2) lines.push('RESULT REACTION: the winner was expected to lose by a wide margin, so the announcers react to the finish with real shock, as a big upset.');
+    else if (w >= 0 && l >= 0 && l - w === 1) lines.push('RESULT REACTION: the finish is a mild surprise to the announcers.');
+  }
+  return lines.join('\n');
+}
 function aiPrompt(b, profiles, nameOf) {
   const show = b.show, seg = b.segment;
   const sideNames = side => side.map(nameOf).join(' & ');
@@ -883,6 +912,7 @@ function aiPrompt(b, profiles, nameOf) {
     show.notes ? `CEO's show notes: ${show.notes}` : '',
     b.champions.length ? `CURRENT CHAMPIONS: ${b.champions.join('; ')}.` : '',
     profiles ? `WRESTLERS:\n${profiles}` : '',
+    levelGuide(b, nameOf),
     b.earlier.length ? `EARLIER IN TONIGHT'S SHOW (the announcers may refer back to these; do not retell them):\n${b.earlier.map(t => '- ' + t).join('\n')}` : ''
   ].filter(Boolean).join('\n\n');
   let task;
@@ -992,6 +1022,8 @@ async function aiDraft(request, env) {
   const facts = {};
   if (raw.facts && typeof raw.facts === 'object') for (const [k, v] of Object.entries(raw.facts)) if (ID_RE.test(k)) facts[k] = aiList(v, 6, 400);
   const ids = [...new Set([...sides.flat(), ...aiIds(raw.wrestlers)])].slice(0, 24);
+  const levels = {};
+  if (raw.levels && typeof raw.levels === 'object') for (const [k, v] of Object.entries(raw.levels)) if (ID_RE.test(k) && LEVELS.includes(v)) levels[k] = v;
   const b = {
     kind, tier: raw.tier === 'lite' ? 'lite' : 'main',
     show: { title: aiStr(sh.title, 100), date: aiStr(sh.date, 10), venue: aiStr(sh.venue, 100), city: aiStr(sh.city, 100), ple: !!sh.ple, notes: aiStr(sh.notes, 600) },
@@ -999,7 +1031,7 @@ async function aiDraft(request, env) {
     result: { winner: Number.isInteger(res.winner) && res.winner >= -1 && res.winner < sides.length ? res.winner : -1, finish: aiStr(res.finish, 300) },
     earlier: aiList(raw.earlier, 14, 300), champions: aiList(raw.champions, 6, 200),
     base: (Array.isArray(raw.base) ? raw.base : []).slice(0, 40).map(x => ({ text: aiStr(x && x.text, 1200) })).filter(x => x.text),
-    baseWords: 0, main: !!raw.main,
+    baseWords: 0, main: !!raw.main, levels,
     card: {
       matches: aiList(card.matches, 12, 400),
       appearances: (Array.isArray(card.appearances) ? card.appearances : []).slice(0, 12)
@@ -1016,7 +1048,7 @@ async function aiDraft(request, env) {
   }
   const names = {}; for (const r of rows) { try { names[r.id] = JSON.parse(r.data).ringName; } catch (_) { /* skip */ } }
   const nameOf = id => names[id] || 'Unknown Wrestler';
-  const profiles = rows.map(r => { try { return aiProfile(r, facts); } catch (_) { return ''; } }).filter(Boolean).join('\n');
+  const profiles = rows.map(r => { try { return aiProfile(r, facts, b.levels); } catch (_) { return ''; } }).filter(Boolean).join('\n');
   const prompt = aiPrompt(b, profiles, nameOf);
   const words = kind === 'polish' ? Math.max(120, b.baseWords) : b.segment.length * 200;
   const mainModel = env.GEMINI_MODEL_MAIN || GEMINI_MODEL_MAIN, liteModel = env.GEMINI_MODEL_LITE || GEMINI_MODEL_LITE, backupModel = env.GEMINI_MODEL_FALLBACK || GEMINI_MODEL_FALLBACK;
@@ -1057,6 +1089,19 @@ async function aiDraft(request, env) {
     throw new HttpError(allQuota ? 429 : 503, `Gemini could not write this. ${trail}. ${allQuota ? 'Try again later (daily limits reset at midnight Pacific).' : 'Try again in a minute.'}`);
   }
   const fellBack = model !== chain[0];
+  // The on-air text must never use insider terms. One rewrite attempt; after that, report it instead of saving.
+  const hits = bs => { const m = (bs || []).map(x => (x && typeof x.text === 'string' ? x.text.match(BANNED_ON_AIR) : null)).filter(Boolean); return m.length ? [...new Set(m.map(x => x[0].toLowerCase()))] : []; };
+  let bad = hits(beats);
+  if (bad.length) {
+    const left = 100000 - (Date.now() - t0);
+    if (left >= 12000) {
+      try {
+        const again = await geminiCall(env, model, AI_SYSTEM, `${prompt}\n\nIMPORTANT: your last draft used words that must never be said on air (${bad.join(', ')}). Rewrite it without them or any other ranking or category talk, keeping everything else.`, words, Math.min(50000, left));
+        beats = again; bad = hits(again);
+      } catch (_) { /* keep the first draft; it is rejected below */ }
+    }
+    if (bad.length) throw new HttpError(502, `The AI used an insider term on air (“${bad.join('”, “')}”), so nothing was kept. Please draft it again.`);
+  }
   const ok = new Set(ids);
   const out = cleanBeats(beats.map(x => {
     x = x && typeof x === 'object' ? x : {};

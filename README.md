@@ -203,3 +203,6 @@ An entrance theme loops under the announcers (dropping to 40% volume after a few
 - The show intro gives every match 2 to 3 sentences on why to care (Mike plus Earl). The AI draws only on facts on file; the built-in writer uses feuds, recent results, the title and the stipulation.
 - The main event match (the last match when the card has two or more) opens with one Mike Johnson hype beat before the entrances.
 - Feuds are mirrored: adding, editing or removing a feud on one wrestler does the same on the other. Opening Storylines once also copies any older one-sided feud onto the other wrestler. Changes save instantly (no save button).
+
+## Superstar Level (CEO only)
+Each wrestler's Storylines panel has a Superstar Level: Not set, Jobber, Lower Card, Mid Card or Superstar. It is private (storylines are CEO-only) and saves instantly. The AI receives only an "announcer attitude" description, never the label, so the announcers show it through opinions and react with surprise to upsets and to titles held above someone's standing. Drafts are scanned for insider terms (jobber, lower card, mid card, upper card, "doing the job", and so on); a draft containing one is rewritten once and rejected with a message if it still does.
