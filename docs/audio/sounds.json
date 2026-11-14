@@ -2,6 +2,9 @@
   "cues": {
     "intro_music": "uscw-theme.mp3"
   },
-  "entrances": {},
+  "entrances": {
+    "hardbody harrison": "entrance-hardbody.mp3",
+    "paco rodriguez": "entrance-paco.mp3"
+  },
   "defaultEntrance": ""
 }

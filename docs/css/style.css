@@ -226,9 +226,9 @@ textarea{min-height:90px;resize:vertical}
 .tile.mini:hover{transform:translateY(-2px)}
 .mini .tile-bg::after{font-size:96px;right:-10px;top:-14px}
 .mini .tile-txt{padding:8px 8px 10px}
-.mini .tile-name{font-size:21px;text-shadow:0 1px 0 rgba(0,0,0,.4)}
+.mini .tile-name{font-size:17px;overflow-wrap:normal;word-break:normal;line-height:1.05;text-shadow:0 1px 0 rgba(0,0,0,.4)}
 .mini .tile-champ{font-size:11px;top:6px;left:6px;padding:1px 6px}
-@media(max-width:600px){.tile.mini{width:104px}.mini .tile-txt{padding:6px 6px 8px}.mini .tile-name{font-size:16px}.mh{gap:8px}.mh-vs{font-size:24px}}
+@media(max-width:600px){.tile.mini{width:104px}.mini .tile-txt{padding:6px 6px 8px}.mini .tile-name{font-size:14px}.mh{gap:8px}.mh-vs{font-size:24px}}
 
 /* ----- live-show match entrance ----- */
 .mh.anim .tile.mini{opacity:0;animation:cardSlamL calc(.6s*var(--k,1)) cubic-bezier(.2,.9,.3,1.15) both}
@@ -304,3 +304,7 @@ nav a.on .badge{box-shadow:0 0 0 2px var(--navy)}
 
 /* Action beats, written in parentheses */
 .w-act{font-style:italic;opacity:.85}
+
+/* Champion portraits */
+.champ-pics{display:flex;gap:8px;flex:0 0 auto}
+.champ-pic{display:block;width:72px;height:96px;border-radius:8px;background-size:cover;background-position:center top;border:2px solid var(--navy);box-shadow:0 1px 4px rgba(10,26,63,.25)}

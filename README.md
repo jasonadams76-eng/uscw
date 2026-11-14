@@ -187,3 +187,7 @@ Sound is fully optional. Put files in `docs/audio/` and list them in `docs/audio
 
 Every page load compares its version with `docs/version.json`; if a newer release is live, a banner offers a Reload button.
 Run `node tools/stamp.js` before each commit that changes anything in `docs/` — it writes a fresh version and stamps the `?v=` cache-busters in `docs/index.html`.
+
+## Wrestler portraits and entrance themes
+- Portraits: put an image in `docs/img/wrestlers/` and add `"ring name lower case": "file.webp"` to `images.json`. Shown on Superstars tiles, champion cards and match headers.
+- Entrance themes: `docs/audio/sounds.json` `entrances` maps a lower-case ring name (or wrestler id) to a ~30 s clip.

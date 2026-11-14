@@ -28,6 +28,6 @@ To add a sound: copy the file into this folder (mp3 or m4a works everywhere), th
 
 - `cues` are the names in the show editor's sound dropdown.
 - `count_1`, `count_2`, `count_3` are the crowd counting along with a pin: one short recording of the crowd yelling each number. Each plays the moment that number appears on screen (a kickout plays 1 and 2, a pinfall plays 1, 2 and 3). Optional `pin_count_1`, `pin_count_2` and `pin_count_3` replace them on a real pinfall if you want louder versions.
-- `entrances` maps a wrestler's id to their theme. A wrestler's id is the last part of their profile address (`#wrestler-<id>`).
+- `entrances` maps a wrestler to their theme, by ring name in lower case (for example `"hardbody harrison"`) or by id (the last part of their profile address, `#wrestler-<id>`). The id wins if both are listed. Use short clips of about 30 seconds with a fade-out.
 - `defaultEntrance` plays for any wrestler without a theme of their own.
 - Keep files short (entrance themes of 15 to 30 seconds are plenty) and only use music you have the right to use. These files are public on the website.

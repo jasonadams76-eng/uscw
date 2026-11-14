@@ -753,7 +753,10 @@ function sndAny(){ const m=SND.man; return !!(m&&(Object.values(m.cues).some(Boo
 function sndFile(cue){
   const m=SND.man; if(!m||!cue) return '';
   if(cue==='entrance') return m.def;
-  if(cue.startsWith('entrance:')) return m.entrances[cue.slice(9)]||m.def;
+  if(cue.startsWith('entrance:')){
+    const id=cue.slice(9), w=S.wrestlers&&S.wrestlers[id];   // a theme can be listed by wrestler id or by ring name
+    return m.entrances[id]||(w&&m.entrances[String(w.ringName||'').trim().toLowerCase()])||m.def;
+  }
   return m.cues[cue]||'';
 }
 const sndIsMusic=cue=>cue==='intro_music'||cue==='entrance'||cue.startsWith('entrance:');
@@ -1356,8 +1359,13 @@ function champCard(c,readOnly){
     ? h('div',{class:'champ-names'}, holders.map((id,i)=>[i?h('span',{class:'amp'},' & '):null, h('a',{href:'#wrestler-'+id},wname(id))]))
     : h('div',{class:'champ-vacant'},'Vacant');
   const meta=[c.since?'Champion since '+fmtDate(c.since).replace(/^\w+, /,''):'', c.wonAt?'Won at '+c.wonAt:''].filter(Boolean).join(' · ');
+  const pics=holders.filter(id=>S.wrestlers[id].image);
   return h('div',{class:'champ'},
     h('div',{class:'belt','aria-hidden':'true'},'★'),
+    pics.length?h('div',{class:'champ-pics'},pics.map(id=>{
+      const pic=h('a',{href:'#wrestler-'+id,class:'champ-pic',title:S.wrestlers[id].ringName});
+      pic.style.backgroundImage='url("'+String(S.wrestlers[id].image).replace(/"/g,'%22')+'")'; return pic;
+    })):null,
     h('div',{class:'champ-body'},
       h('div',{class:'cond champ-title'},c.name),
       names,
@@ -1484,10 +1492,20 @@ async function doLogout(){
   if (location.hash==='#home'||location.hash==='') render(); else location.hash='home';
 }
 
+// Wrestler portraits: img/wrestlers/images.json lists a picture file for each ring name. Missing or unreadable means no portrait.
+let portraitsP=null;
+function loadPortraits(){
+  if(!portraitsP) portraitsP=fetch('img/wrestlers/images.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).catch(()=>({})).then(m=>(m&&typeof m==='object')?m:{});
+  return portraitsP;
+}
 async function loadAll(){
-  const [w,e,c] = await Promise.all([api('GET','/wrestlers'), api('GET','/events'), api('GET','/championships')]);
+  const [w,e,c,pics] = await Promise.all([api('GET','/wrestlers'), api('GET','/events'), api('GET','/championships'), loadPortraits()]);
   const wm={}, em={};
-  w.wrestlers.forEach(x=>{wm[x.id]=x;}); e.events.forEach(x=>{em[x.id]=x;});
+  w.wrestlers.forEach(x=>{
+    wm[x.id]=x;
+    const f=!x.image&&pics[String(x.ringName||'').trim().toLowerCase()];
+    if(f&&/^[\w.\-]+$/.test(f)) x.image='img/wrestlers/'+f;
+  }); e.events.forEach(x=>{em[x.id]=x;});
   const sig = JSON.stringify([wm,em,c.championships]);
   const changed = sig!==S.sig;
   if(S.isCEO){ try{ S.story=(await api('GET','/story')).stories||{}; }catch(_){} await loadSubs(); } else S.story={};
