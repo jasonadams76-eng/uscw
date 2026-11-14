@@ -781,6 +781,15 @@ function sndPlay(cue,force){
 // The show theme is long: it drops under the announcers and fades slowly. Other music fades out quickly.
 function sndBeat(cue){ if(SND.music) (SND.intro?sndFadeOut(22000,0.35):sndFadeOut(4000)); if(cue) sndPlay(cue); }
 
+// A pin or rope-break count: a beat that is only the numbers, e.g. "1 2" or "1 2 3". The page times it and plays the crowd count.
+const COUNT_RE=/^\s*[1-4](?:[\s.]+[1-4])*[\s.]*$/;
+const isCountBeat=t=>COUNT_RE.test(t||'');
+function sndCount(n,pin){
+  if(!SND.man||!SND.pref.on) return;
+  if(pin&&sndFile('pin_count_'+n)){ sndPlay('pin_count_'+n); return; }
+  sndPlay('count_'+n);
+}
+
 function pageWatch(id){
   const e=S.events[id];
   if(!e||!(e.published||S.isCEO)) return h('div',{class:'empty'},'Show not found.');
@@ -862,7 +871,12 @@ function pageWatch(id){
     function follow(was){ if(was) window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}); }
     function progress(){ fill.style.width=(st.total?Math.min(100,100*st.shown/st.total):0)+'%'; }
     function shownOne(){ st.shown++; saveView({view,shown:st.shown,speed}); progress(); }
-    function instant(b){ if(b.seg) segHeader(b.seg); if(b.text) feed.append(h('p',{class:'w-beat'},b.text)); shownOne(); }
+    function countEl(nums,upTo){
+      const p=h('p',{class:'w-beat w-count'});
+      nums.slice(0,upTo).forEach((n,i)=>{ if(i) p.append(h('span',{class:'d'},' · · · · · ')); p.append(h('span',{class:'n'},String(n))); });
+      return p;
+    }
+    function instant(b){ if(b.seg) segHeader(b.seg); if(b.text) feed.append(isCountBeat(b.text)?countEl(b.text.match(/[1-4]/g).map(Number),9):h('p',{class:'w-beat'},b.text)); shownOne(); }
     function playNext(){
       if(stopped||st.paused||st.busy||st.finished) return;
       const b=st.queue.shift();
@@ -875,6 +889,28 @@ function pageWatch(id){
         const was1=nearBottom();
         const p=h('p',{class:'w-beat'}); feed.append(p);
         follow(was1||was);
+        if(isCountBeat(b.text)){
+          const nums=b.text.match(/[1-4]/g).map(Number), pin=nums[nums.length-1]===3&&nums.length>=3;
+          feed.removeChild(p); const cp=countEl(nums,0); feed.append(cp);
+          const finishCount=()=>{
+            // A kickout: the 2 hangs for a random 0.1 to 0.9 seconds before the kickout line appears.
+            const extra=nums[nums.length-1]===2?(100+Math.random()*800)/speed:0;
+            later(()=>{ shownOne(); later(()=>{ st.busy=false; playNext(); },(b.pause||0)*1000/speed); },extra);
+          };
+          const showNum=i=>{
+            const wz=nearBottom();
+            const n=h('span',{class:'n'},String(nums[i])); cp.append(n); follow(wz||was1);
+            sndCount(nums[i],pin);
+            if(i>=nums.length-1){ finishCount(); return; }
+            const gap=1000/speed, dot=gap/6;
+            const nd=h('span',{class:'d'}); cp.append(nd);
+            for(let k=1;k<=5;k++) later(()=>{ nd.textContent+=' · '; },dot*k);
+            later(()=>{ showNum(i+1); },gap);
+          };
+          // the first number lands right away
+          showNum(0);
+          return;
+        }
         const words=(b.text||'').split(/\s+/).filter(Boolean);
         const total=Math.max(1.5,words.length/2.5)*1000/speed;
         let n=0; const step=Math.max(25,total/Math.max(1,words.length));

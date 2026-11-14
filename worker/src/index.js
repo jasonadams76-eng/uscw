@@ -847,8 +847,15 @@ THE PLAYER'S TEXT:\n${base}`;
       ? `OUTCOME (fixed, do not change): ${sideNames(seg.sides[res.winner])} ${seg.sides[res.winner].length > 1 ? 'win' : 'wins'}${res.finish ? ` — finish: ${res.finish}` : ` with their finishing move`}.`
       : 'OUTCOME (fixed): the match ends in a draw / no contest.';
     task = `TASK: Write the full MATCH segment, about ${words} words: ${sidesTxt}${stakes ? ` (${stakes})` : ''}.
-Start with each competitor's entrance (use an entrance:<id> cue on a short beat for each) with Cindy Maxwell's ring introduction of that competitor (hometown, and the title on the line if any), the bell, then play-by-play and color commentary from Mike and Earl with a believable back-and-forth, near-falls, the wrestlers' own moves, and the finish.
+Start with each competitor's entrance (use an entrance:<id> cue on a short beat for each) with Cindy Maxwell's ring introduction of that competitor (hometown, and the title on the line if any), the bell, then play-by-play and color commentary from Mike and Earl with a believable back-and-forth, the wrestlers' own moves, and the finish.
 ${outcome}
+NEAR-FALLS (required): this match needs ${seg.length >= 10 ? 'six or more' : seg.length >= 6 ? 'four or five' : seg.length >= 4 ? 'two or three' : 'one or two'} failed finishing attempts before the end, pin attempts and submission attempts together, by BOTH wrestlers (or teams), the loser included. Build them up: early kickouts are casual and the later ones get closer, set up by a big move from that wrestler's own move list, and no two covers should be set up the same way. Unless the CEO's notes make it a squash, the eventual loser must get at least one or two close pin attempts of their own.
+Write every PIN ATTEMPT as exactly three beats in a row:
+ 1. a short beat from Mike (Earl may add a line) calling the cover, for example: Mike Johnson: “Hardbody Harrison hooks the leg and goes for the cover…”
+ 2. a COUNT BEAT whose text is ONLY the numbers and nothing else: write 1 2 for a kickout. The show page draws and times it (one second per number), so never add dots, words or punctuation to a count beat, and use no cue or pause on it.
+ 3. the kickout beat, shown right after the 2, for example: Mike Johnson: “NO! Paco gets the shoulder up at the last possible moment!” with Earl reacting (he complains about the count when his favorite is the one covering, or cheers when a favorite he dislikes is almost beaten).
+The final pinfall is the same, except its count beat is 1 2 3 and the next beat is the bell and Cindy's announcement. Never let a count beat reach 3 unless that pin ends the match.
+SUBMISSION FINISHERS: if a wrestler's finisher is a submission hold (judge by its name and description), and he is set to lose, he locks it in at least once during the match and his opponent escapes, counters it, or reaches the ropes. For a rope break use a count beat of 1 2 3 4 (the ref counting to four), then the ref breaking the hold and the crowd reacting. If he is set to win by that submission, the earlier attempts fail the same way, and the final one makes the opponent tap out or pass out with no count beat.
 After the finish, Cindy Maxwell announces the winner (and any title change).
 ${seg.desc ? `CEO notes / story for this match: ${seg.desc}` : ''}`;
   } else {

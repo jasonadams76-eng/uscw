@@ -171,6 +171,9 @@ that the Worker creates by itself and clears after 3 days.
 ## AI model fallbacks
 Each AI call tries a chain of models and retries once (after 2 seconds) on a temporary Google error such as 503. Undercard matches: `GEMINI_MODEL_LITE`, then `GEMINI_MODEL_FALLBACK` (default `gemini-3.1-flash-lite`), then `GEMINI_MODEL_MAIN`. Everything else: `GEMINI_MODEL_MAIN`, then `GEMINI_MODEL_LITE`, then `GEMINI_MODEL_FALLBACK`. All three are optional Worker variables; the editor notes when a backup model wrote the text.
 
+## Pin counts and near-falls
+The AI writes each failed pin attempt as three beats: Mike calls the cover, a count beat, then the kickout. A count beat is text made only of numbers (`1 2` for a kickout, `1 2 3` for the finish, `1 2 3 4` for a rope break). The watch page shows it large and centered with one second between numbers, plays the crowd samples `count_1` to `count_3` if they exist, and on a kickout holds the 2 for a random 0.1 to 0.9 seconds before the kickout line. Matches are asked for a number of failed finish attempts based on their length, by both wrestlers, and a submission finisher is locked in at least once when its owner is set to lose. You can type count beats by hand in the editor too.
+
 ## Show cast
 The AI writer knows the whole on-air cast: Mike Johnson (play-by-play) and Earl Backwater (color) commentate; Cindy Maxwell (ring announcer) introduces competitors and announces winners; Paul Sandler and Jackie O'Sullivan (interviewers) run promos and backstage segments; Jason Adams (Owner & CEO) appears in ceremonies and authority angles. The list lives in `AI_SYSTEM` in `worker/src/index.js`.
 
