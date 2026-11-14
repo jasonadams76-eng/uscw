@@ -174,6 +174,9 @@ Each AI call tries a chain of models and retries once (after 2 seconds) on a tem
 ## Pin counts and near-falls
 The AI writes each failed pin attempt as three beats: Mike calls the cover, a count beat, then the kickout. A count beat is text made only of numbers (`1 2` for a kickout, `1 2 3` for the finish, `1 2 3 4` for a rope break). The watch page shows it large and centered with one second between numbers, plays the crowd samples `count_1` to `count_3` if they exist, and on a kickout holds the 2 for a random 0.1 to 0.9 seconds before the kickout line. Matches are asked for a number of failed finish attempts based on their length, by both wrestlers, and a submission finisher is locked in at least once when its owner is set to lose. You can type count beats by hand in the editor too.
 
+## Action beats
+Spoken lines are written `Name: “...”`. A beat that describes action instead (the crowd, the camera, entrances, what happens in the ring) is wrapped in parentheses and shown in italics on the watch page. The AI writes it that way, the Worker wraps any action beat the AI forgot to, and the code-based intro writer follows the same rule. Saved scripts are not rewritten; redraft or Polish with AI to bring an older script into the style.
+
 ## Show cast
 The AI writer knows the whole on-air cast: Mike Johnson (play-by-play) and Earl Backwater (color) commentate; Cindy Maxwell (ring announcer) introduces competitors and announces winners; Paul Sandler and Jackie O'Sullivan (interviewers) run promos and backstage segments; Jason Adams (Owner & CEO) appears in ceremonies and authority angles. The list lives in `AI_SYSTEM` in `worker/src/index.js`.
 

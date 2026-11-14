@@ -1012,7 +1012,7 @@ function aiAction(t) {
   t = typeof t === 'string' ? t.trim() : '';
   if (!t || /^[\s.1-4]+$/.test(t) && /[1-4]/.test(t)) return t;
   if (/^\(/.test(t) && /\)$/.test(t)) return t;
-  if (/^[^\n:“"(]{1,40}:\s*[“"‘']/.test(t)) return t;
+  if (/^[A-Z][\w'.\-]*(\s+[A-Z][\w'.\-]*){0,3}:\s*\S/.test(t)) return t;   // a speaker's name, then the line
   return '(' + t + ')';
 }
 function aiFail(e) {
