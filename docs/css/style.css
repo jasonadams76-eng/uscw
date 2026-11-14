@@ -308,3 +308,11 @@ nav a.on .badge{box-shadow:0 0 0 2px var(--navy)}
 /* Champion portraits */
 .champ-pics{display:flex;gap:8px;flex:0 0 auto}
 .champ-pic{display:block;width:72px;height:96px;border-radius:8px;background-size:cover;background-position:center top;border:2px solid var(--navy);box-shadow:0 1px 4px rgba(10,26,63,.25)}
+
+/* portrait submissions */
+.crop-wrap{display:flex;justify-content:center;margin:10px 0}
+.crop-cv{border-radius:8px;border:2px solid var(--navy);touch-action:none;cursor:grab;max-width:100%;background:#000}
+.crop-zoom{width:100%}
+.port-pending{width:90px;height:127px;border-radius:8px;background:#ddd center top/cover no-repeat;border:2px solid var(--navy);flex:0 0 auto}
+.port-pending.big{width:100%;height:auto;aspect-ratio:480/847;max-width:240px;margin:0 auto}
+.port-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}

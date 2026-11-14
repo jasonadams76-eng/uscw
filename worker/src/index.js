@@ -395,6 +395,7 @@ async function wrestlerRoutes(request, env, id) {
     const { results: titles } = await env.DB.prepare('SELECT id, holders FROM championships').all();
     await ensureStory(env); await ensureSubs(env);
     const stmts = [env.DB.prepare('DELETE FROM wrestlers WHERE id = ?').bind(id), env.DB.prepare('DELETE FROM wrestler_story WHERE id = ?').bind(id), env.DB.prepare('DELETE FROM submissions WHERE wrestler_id = ?').bind(id)];
+    try { await ensurePortraits(env); stmts.push(env.DB.prepare('DELETE FROM portraits WHERE wrestler_id = ?').bind(id)); } catch (_) { /* optional */ }
     for (const t of titles) {
       if (JSON.parse(t.holders || '[]').includes(id))   // a released champion leaves the title vacant
         stmts.push(env.DB.prepare("UPDATE championships SET holders = '[]', since = '', won_at = '', updated_at = ? WHERE id = ?").bind(Date.now(), t.id));
@@ -496,6 +497,114 @@ async function backfillFeuds(env, stories) {
   }
   for (const x of dirty) await saveStoryRow(env, x, cleanStory(stories[x]));
 }
+/* ---------------- wrestler portraits (player submissions with CEO approval) ---------------- */
+// One row per wrestler: the approved portrait (cur_*) and at most one pending submission (pend_*). Stored as small base64 WebP/JPEG/PNG.
+let portraitsReady = null;
+function ensurePortraits(env) {
+  if (!portraitsReady) {
+    portraitsReady = env.DB.prepare(`CREATE TABLE IF NOT EXISTS portraits (wrestler_id TEXT PRIMARY KEY, cur_data TEXT NOT NULL DEFAULT '', cur_type TEXT NOT NULL DEFAULT '', cur_ver INTEGER NOT NULL DEFAULT 0, pend_data TEXT NOT NULL DEFAULT '', pend_type TEXT NOT NULL DEFAULT '', pend_at INTEGER NOT NULL DEFAULT 0, pend_seen INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL DEFAULT '', day_start INTEGER NOT NULL DEFAULT 0, day_count INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0)`).run()
+      .catch(e => { portraitsReady = null; throw e; });
+  }
+  return portraitsReady;
+}
+const MAX_PORTRAIT_B64 = 300000;          // about 220 KB of image
+const PORTRAITS_PER_DAY = 5;
+function imageKind(b) {
+  if (b.length > 12 && b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return 'image/jpeg';
+  if (b.length > 12 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'image/png';
+  if (b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  return '';
+}
+function b64Bytes(t) { const bin = atob(t); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
+function imageResponse(data, type, cache) {
+  return new Response(b64Bytes(data), { status: 200, headers: { 'Content-Type': type, 'Cache-Control': cache, 'X-Content-Type-Options': 'nosniff' } });
+}
+async function portraitList(request, env) {
+  const user = await getUser(request, env, false);
+  await ensurePortraits(env);
+  const { results } = await env.DB.prepare("SELECT wrestler_id, cur_ver, pend_at, pend_seen, outcome, note, (pend_data != '') AS has_pend FROM portraits").all();
+  const out = { versions: {}, mine: null, pending: [] };
+  for (const r of results) {
+    if (r.cur_ver > 0) out.versions[r.wrestler_id] = r.cur_ver;
+    if (user && r.wrestler_id === user.id) out.mine = { pending: !!r.has_pend, at: r.pend_at, outcome: r.outcome, note: r.note };
+    if (user && user.isAdmin && r.has_pend) out.pending.push({ id: r.wrestler_id, at: r.pend_at, seen: !!r.pend_seen });
+  }
+  return json(out);
+}
+async function portraitRoutes(request, env, wid, sub) {
+  const method = request.method;
+  await ensurePortraits(env);
+  if (method === 'GET') {
+    if (!sub) {
+      const r = await env.DB.prepare("SELECT cur_data, cur_type FROM portraits WHERE wrestler_id = ? AND cur_data != ''").bind(wid).first();
+      if (!r) throw new HttpError(404, 'No portrait');
+      return imageResponse(r.cur_data, r.cur_type, 'public, max-age=31536000, immutable');   // the page adds ?v=<version>, so a new portrait gets a new URL
+    }
+    const user = await getUser(request, env, true);
+    if (!user.isAdmin && user.id !== wid) throw new HttpError(403, 'Not allowed.');
+    const r = await env.DB.prepare("SELECT pend_data, pend_type FROM portraits WHERE wrestler_id = ? AND pend_data != ''").bind(wid).first();
+    if (!r) throw new HttpError(404, 'Nothing pending');
+    return imageResponse(r.pend_data, r.pend_type, 'private, no-store');
+  }
+  const user = await getUser(request, env, true);
+  const w = await env.DB.prepare('SELECT id FROM wrestlers WHERE id = ?').bind(wid).first();
+  if (!w) throw new HttpError(404, 'Wrestler not found');
+  const now = Date.now();
+  await env.DB.prepare('INSERT OR IGNORE INTO portraits (wrestler_id, updated_at) VALUES (?, ?)').bind(wid, now).run();
+  const row = await env.DB.prepare('SELECT * FROM portraits WHERE wrestler_id = ?').bind(wid).first();
+  if (method === 'POST' && !sub) {
+    if (!user.isAdmin && user.id !== wid) throw new HttpError(403, 'You can only submit a portrait for your own wrestler.');
+    const b = await readJson(request, 420 * 1024);
+    let data = typeof b.data === 'string' ? b.data.replace(/^data:[^,]*,/, '').replace(/\s+/g, '') : '';
+    if (!data || data.length > MAX_PORTRAIT_B64) throw new HttpError(413, 'That image is too big. Choose a smaller one.');
+    let bytes; try { bytes = b64Bytes(data); } catch (_) { throw new HttpError(400, 'That image could not be read.'); }
+    const type = imageKind(bytes);
+    if (!type) throw new HttpError(400, 'Use a JPG, PNG or WebP image.');
+    if (user.isAdmin) {   // the CEO's own upload applies immediately
+      await env.DB.prepare("UPDATE portraits SET cur_data = ?, cur_type = ?, cur_ver = ?, pend_data = '', pend_type = '', pend_at = 0, outcome = '', note = '', updated_at = ? WHERE wrestler_id = ?").bind(data, type, now, now, wid).run();
+      return json({ ok: true, applied: true, version: now });
+    }
+    const fresh = now - row.day_start < 86400000;
+    if (fresh && row.day_count >= PORTRAITS_PER_DAY) throw new HttpError(429, `You can submit ${PORTRAITS_PER_DAY} portraits a day. Try again tomorrow.`);
+    await env.DB.prepare("UPDATE portraits SET pend_data = ?, pend_type = ?, pend_at = ?, pend_seen = 0, outcome = 'pending', note = '', day_start = ?, day_count = ?, updated_at = ? WHERE wrestler_id = ?")
+      .bind(data, type, now, fresh ? row.day_start : now, fresh ? row.day_count + 1 : 1, now, wid).run();
+    return json({ ok: true, applied: false });
+  }
+  if (method === 'PUT' && !sub) {
+    if (!user.isAdmin) throw new HttpError(403, 'Only the CEO can review portraits.');
+    const b = await readJson(request, 4 * 1024);
+    const note = str(b.note, 300);
+    if (!row.pend_data) throw new HttpError(409, 'There is nothing waiting for this wrestler.');
+    if (b.action === 'approve') {
+      await env.DB.prepare("UPDATE portraits SET cur_data = pend_data, cur_type = pend_type, cur_ver = ?, pend_data = '', pend_type = '', pend_at = 0, outcome = 'approved', note = ?, updated_at = ? WHERE wrestler_id = ?").bind(now, note, now, wid).run();
+      return json({ ok: true, version: now });
+    }
+    if (b.action === 'reject') {
+      await env.DB.prepare("UPDATE portraits SET pend_data = '', pend_type = '', pend_at = 0, outcome = 'rejected', note = ?, updated_at = ? WHERE wrestler_id = ?").bind(note, now, wid).run();
+      return json({ ok: true });
+    }
+    throw new HttpError(400, 'Unknown action');
+  }
+  if (method === 'DELETE' && sub === 'pending') {
+    if (!user.isAdmin && user.id !== wid) throw new HttpError(403, 'Not allowed.');
+    await env.DB.prepare("UPDATE portraits SET pend_data = '', pend_type = '', pend_at = 0, outcome = '', note = '', updated_at = ? WHERE wrestler_id = ?").bind(now, wid).run();
+    return json({ ok: true });
+  }
+  if (method === 'DELETE' && !sub) {
+    if (!user.isAdmin) throw new HttpError(403, 'Only the CEO can remove an approved portrait.');
+    await env.DB.prepare("UPDATE portraits SET cur_data = '', cur_type = '', cur_ver = 0, outcome = '', note = '', updated_at = ? WHERE wrestler_id = ?").bind(now, wid).run();
+    return json({ ok: true });
+  }
+  throw new HttpError(405, 'Method not allowed');
+}
+async function portraitsSeen(request, env) {
+  const user = await getUser(request, env, true);
+  if (!user.isAdmin) throw new HttpError(403, 'CEO only.');
+  await ensurePortraits(env);
+  await env.DB.prepare("UPDATE portraits SET pend_seen = 1 WHERE pend_data != ''").run();
+  return json({ ok: true });
+}
+
 /* ---------------- recorded match results ---------------- */
 // One row per wrestler per match, filled in automatically once a published show's release time has passed. Never trimmed.
 let resultsReady = null;
@@ -1305,6 +1414,10 @@ async function route(request, env) {
   if (m === 'POST' && path === '/api/ai/draft') return aiDraft(request, env);
   const bm = path.match(/^\/api\/submissions(?:\/([A-Za-z0-9_-]{1,64}))?$/);
   if (bm) return submissionRoutes(request, env, bm[1]);
+  if (m === 'GET' && path === '/api/portraits') return portraitList(request, env);
+  if (m === 'POST' && path === '/api/portraits/seen') return portraitsSeen(request, env);
+  const pm = path.match(/^\/api\/portrait\/([A-Za-z0-9_-]{1,64})(?:\/(pending))?$/);
+  if (pm) return portraitRoutes(request, env, pm[1], pm[2]);
   const rm = path.match(/^\/api\/story-result\/(\d{1,12})$/);
   if (rm) return resultRoutes(request, env, rm[1]);
   const sm = path.match(/^\/api\/story(?:\/([A-Za-z0-9_-]{1,64}))?$/);

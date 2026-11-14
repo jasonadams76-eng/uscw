@@ -211,3 +211,7 @@ Each wrestler's Storylines panel has a Superstar Level: Not set, Jobber, Lower C
 - When a published show's release time has passed, every match with a winner (or a draw) is recorded in the `match_results` table, one row per wrestler, never trimmed. The Worker catches up whenever Storylines is opened or an AI draft is requested.
 - A wrestler's Recent results panel shows the 5 most recent; the CEO can Edit or delete an automatic result (an edited or deleted result is not overwritten by later catch-ups). The old Add result form is gone; hand-entered results already on file stay until deleted.
 - The AI gets "PREVIOUS MEETINGS" (up to 5, newest first) for each match and in the intro rundown, plus each wrestler's last 5 results as recent form. The built-in intro writer mentions how often the two have met and who won last.
+
+## Player portraits
+- On their own wrestler's page a player picks an image, frames it in a crop box (480 x 847 WebP, about 40-150 KB) and submits it. It stays private (pending) until the CEO approves it in the CEO Office, where a Portrait Submissions group appears with a badge like other submissions.
+- Approved portraits are stored in the D1 `portraits` table and served from `/api/portrait/<id>`; they replace file-based portraits (`docs/img/wrestlers`). Only the CEO can remove an approved portrait, and a CEO upload applies immediately. Players can submit 5 a day; the Worker checks the real file type and size.

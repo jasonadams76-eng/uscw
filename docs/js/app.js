@@ -666,6 +666,7 @@ function pageWrestler(id){
       h('div',{class:'cond wp-priv-h'},S.isCEO?'CEO only — hidden from the public':'Only you and the CEO can see this'),
       w.realName?h('div',{class:'stats',style:'margin-top:0'},stat('Real name',w.realName)):null,
       cats.length?h('div',{class:'moves',style:'margin-top:12px'},cats.map(([k,l])=>h('div',{class:'card'},h('h3',{},l),h('ul',{},mv[k].map(m=>h('li',{},m)))))):null):null,
+    portraitPanel(id),
     S.isCEO?storyPanel(id):null);
   wrap.append(card);
   return wrap;
@@ -1075,6 +1076,7 @@ function pageCEO(){
   wrap.append(h('div',{class:'sect'},h('div',{class:'sect-h'},h('h2',{},'Roster Management'),h('div',{class:'sp'}),
     h('a',{class:'btn alt sm',href:'#edit-'+uid8()},'+ Add NPC / Guest Wrestler')),
     ws.length?h('div',{class:'tiles'},ws.map(superTile)):h('div',{class:'empty'},'No wrestlers have signed yet. Share the page with your players!')));
+  wrap.append(portraitInbox());
   wrap.append(subInbox());
   wrap.append(h('div',{class:'hint',style:'margin-top:24px'},'Tip: to make another user a CEO, set is_admin = 1 on their row in the D1 users table (see the README).'));
   return wrap;
@@ -1083,7 +1085,7 @@ function pageCEO(){
 /* ----- Superstar Hub: player submissions ----- */
 const SUB_TYPES={promo:'Promo / Interview', backstage:'Backstage Segment', angle:'Angle / Brawl', other:'Other'};
 const MAX_OPEN_SUBS=3;
-function unseenSubs(){ return S.isCEO?(S.subs||[]).filter(x=>!x.seen).length:0; }
+function unseenSubs(){ return S.isCEO?(S.subs||[]).filter(x=>!x.seen).length+(S.portraitPending||[]).filter(x=>!x.seen).length:0; }
 function subStatusTag(x){
   if(x.status==='used') return h('span',{class:'tag navy'},'Used'+(S.events[x.usedEvent]?' in '+(S.events[x.usedEvent].title||'a show'):''));
   if(x.status==='approved') return h('span',{class:'tag navy'},'Approved');
@@ -1157,6 +1159,116 @@ function pageHub(){
   drawAll();
   loadSubs().then(()=>{ if(!editId) drawAll(); });
   return wrap;
+}
+
+/* ----- wrestler portraits: players submit, the CEO approves ----- */
+const PORT_W=480, PORT_H=847, PORT_MAX=150*1024;
+async function portraitBlobUrl(wid){
+  const r=await fetch(window.USCW_CONFIG.API_BASE+'/api/portrait/'+encodeURIComponent(wid)+'/pending',{headers:{Authorization:'Bearer '+S.token}});
+  if(!r.ok) throw new Error('Could not load the image.');
+  return URL.createObjectURL(await r.blob());
+}
+async function reloadPortraits(){ try{ const i=await api('GET','/portraits'); S.portraitVer=i.versions||{}; S.portraitMine=i.mine||null; S.portraitPending=i.pending||[]; }catch(_){} await loadAll(); }
+// Crop box: drag to move, slider to zoom. Calls done(base64) with a WebP (or JPEG) at the portrait size.
+function cropDialog(file,done){
+  const url=URL.createObjectURL(file), img=new Image();
+  img.onerror=()=>{ URL.revokeObjectURL(url); toast('That file could not be read as an image.',true); };
+  img.onload=()=>{
+    const VW=240, VH=Math.round(240*PORT_H/PORT_W);
+    const cv=h('canvas',{width:VW,height:VH,class:'crop-cv'});
+    const ctx=cv.getContext('2d');
+    const base=Math.max(VW/img.width,VH/img.height);
+    let zoom=1, ox=0, oy=0;
+    const clamp=()=>{ const w=img.width*base*zoom,hh=img.height*base*zoom; ox=Math.min(0,Math.max(VW-w,ox)); oy=Math.min(0,Math.max(VH-hh,oy)); };
+    const paint=()=>{ clamp(); ctx.fillStyle='#000'; ctx.fillRect(0,0,VW,VH); ctx.drawImage(img,ox,oy,img.width*base*zoom,img.height*base*zoom); };
+    ox=(VW-img.width*base)/2; oy=(VH-img.height*base)/2; paint();
+    let drag=null;
+    cv.addEventListener('pointerdown',e=>{ drag={x:e.clientX,y:e.clientY,ox,oy}; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove',e=>{ if(!drag) return; ox=drag.ox+(e.clientX-drag.x); oy=drag.oy+(e.clientY-drag.y); paint(); });
+    const end=()=>{ drag=null; }; cv.addEventListener('pointerup',end); cv.addEventListener('pointercancel',end);
+    const slider=h('input',{type:'range',min:'1',max:'3',step:'0.02',value:'1',class:'crop-zoom',oninput:e=>{
+      const nz=parseFloat(e.target.value), cx=(VW/2-ox)/(img.width*base*zoom), cy=(VH/2-oy)/(img.height*base*zoom);
+      zoom=nz; ox=VW/2-cx*img.width*base*zoom; oy=VH/2-cy*img.height*base*zoom; paint(); }});
+    const close=()=>{ URL.revokeObjectURL(url); ov.remove(); };
+    const useBtn=h('button',{type:'button',class:'btn',onclick:async()=>{
+      useBtn.disabled=true; useBtn.textContent='Preparing…';
+      try{
+        const out=document.createElement('canvas'); out.width=PORT_W; out.height=PORT_H;
+        const k=PORT_W/VW; out.getContext('2d').drawImage(img,ox*k,oy*k,img.width*base*zoom*k,img.height*base*zoom*k);
+        let blob=null;
+        for(const q of [0.86,0.74,0.62,0.5,0.38]){
+          blob=await new Promise(r=>out.toBlob(r,'image/webp',q));
+          if(!blob||blob.type!=='image/webp') blob=await new Promise(r=>out.toBlob(r,'image/jpeg',q));
+          if(blob&&blob.size<=PORT_MAX) break;
+        }
+        if(!blob||blob.size>200*1024) throw new Error('That image is still too large. Try a simpler picture.');
+        const b64=await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(String(fr.result).split(',')[1]); fr.onerror=rej; fr.readAsDataURL(blob); });
+        close(); done(b64);
+      }catch(e){ useBtn.disabled=false; useBtn.textContent='Use this portrait'; toast(e.message||'Could not prepare the image.',true); }
+    }},'Use this portrait');
+    const ov=h('div',{class:'modal-bg'},h('div',{class:'modal'},
+      h('h3',{},'Frame your portrait'),
+      h('div',{class:'hint'},'Drag the picture to position it and use the slider to zoom.'),
+      h('div',{class:'crop-wrap'},cv),slider,
+      h('div',{class:'row',style:'margin-top:12px;gap:8px'},useBtn,h('button',{type:'button',class:'btn alt',onclick:close},'Cancel'))));
+    document.body.append(ov);
+  };
+  img.src=url;
+}
+function portraitPanel(id){
+  const mine=S.user&&id===S.uid, ceo=S.isCEO;
+  if(!mine&&!ceo) return null;
+  const box=h('div',{class:'wp-private',style:'margin-top:16px'});
+  const pm=mine?S.portraitMine:null;
+  const hasCur=!!(S.portraitVer&&S.portraitVer[id]);
+  function pick(){
+    const inp=h('input',{type:'file',accept:'image/jpeg,image/png,image/webp',style:'display:none',onchange:e=>{
+      const f=e.target.files&&e.target.files[0]; if(!f) return;
+      if(!/^image\/(jpeg|png|webp)$/.test(f.type)){ toast('Use a JPG, PNG or WebP image.',true); return; }
+      if(f.size>12*1024*1024){ toast('That file is very large. Choose one under 12 MB.',true); return; }
+      cropDialog(f,async b64=>{
+        const r={}; if(await safe(async()=>{ Object.assign(r,await api('POST','/portrait/'+encodeURIComponent(id),{data:b64})); },ceo?'Portrait applied.':'Portrait sent to the CEO for approval.')){ await reloadPortraits(); render(true); }
+      });
+    }});
+    document.body.append(inp); inp.click(); setTimeout(()=>inp.remove(),60000);
+  }
+  box.append(h('div',{class:'cond wp-priv-h'},ceo?'CEO — portrait':'Your portrait'));
+  if(pm&&pm.pending){
+    const pic=h('div',{class:'port-pending'});
+    portraitBlobUrl(id).then(u=>{ pic.style.backgroundImage='url("'+u+'")'; }).catch(()=>{});
+    box.append(h('div',{class:'row',style:'gap:14px;align-items:flex-start'},pic,h('div',{},
+      h('div',{},'Waiting for the CEO. Nobody else can see this picture until it is approved.'),
+      h('button',{type:'button',class:'btn alt sm',style:'margin-top:8px',onclick:()=>confirmDlg('Withdraw this portrait?','The submission will be removed.','Withdraw',async()=>{ if(await safe(()=>api('DELETE','/portrait/'+encodeURIComponent(id)+'/pending'),'Withdrawn.')){ await reloadPortraits(); render(true); } })},'Withdraw'))));
+  } else if(pm&&pm.outcome==='rejected'){
+    box.append(h('div',{class:'notice'},'Your last portrait was not approved.'+(pm.note?' CEO’s note: '+pm.note:'')));
+  } else if(pm&&pm.outcome==='approved'&&hasCur){
+    box.append(h('div',{class:'hint'},'Your portrait was approved.'+(pm.note?' CEO’s note: '+pm.note:'')));
+  }
+  box.append(h('div',{class:'hint'},ceo?'As CEO, a portrait you upload is applied immediately.':'The CEO reviews every portrait, and nobody else sees it until it is approved. Artwork, AI pictures or silhouettes work best. Please do not upload photos of real people, so your identity stays private.'),
+    h('div',{class:'row',style:'gap:8px;margin-top:8px'},
+      h('button',{type:'button',class:'btn sm',onclick:pick},(pm&&pm.pending)?'Replace with a different picture':(hasCur?'Submit a new portrait':'Submit a portrait')),
+      ceo&&hasCur?h('button',{type:'button',class:'btn danger sm',onclick:()=>confirmDlg('Remove this portrait?','The wrestler goes back to no portrait (or the built-in one, if there is one).','Remove',async()=>{ if(await safe(()=>api('DELETE','/portrait/'+encodeURIComponent(id)),'Portrait removed.')){ await reloadPortraits(); render(true); } })},'Remove portrait'):null));
+  return box;
+}
+function portraitInbox(){
+  const list=(S.portraitPending||[]).slice().sort((a,b)=>a.at-b.at);
+  if(!list.length) return h('div',{});
+  const box=h('div',{class:'sect'});
+  box.append(h('div',{class:'sect-h'},h('h2',{},'Portrait Submissions'),h('div',{class:'sp'}),h('span',{class:'tag red'},list.length+' waiting')));
+  const grid=h('div',{class:'port-grid'});
+  list.forEach(it=>{
+    const w=S.wrestlers[it.id], pic=h('div',{class:'port-pending big'});
+    portraitBlobUrl(it.id).then(u=>{ pic.style.backgroundImage='url("'+u+'")'; }).catch(()=>{});
+    const note=h('input',{type:'text',placeholder:'Note to the player (optional)',style:'width:100%'});
+    const act=(action,msg)=>async()=>{ if(await safe(()=>api('PUT','/portrait/'+encodeURIComponent(it.id),{action,note:note.value}),msg)){ await reloadPortraits(); render(true); renderNav(route()); } };
+    grid.append(h('div',{class:'card',style:'padding:12px'},pic,
+      h('div',{style:'font-weight:600;margin:8px 0 4px'},w?w.ringName:'Unknown wrestler'),
+      h('div',{class:'hint'},subDate(it.at)),note,
+      h('div',{class:'row',style:'gap:8px;margin-top:8px'},h('button',{type:'button',class:'btn sm',onclick:act('approve','Portrait approved.')},'Approve'),h('button',{type:'button',class:'btn danger sm',onclick:act('reject','Portrait rejected.')},'Reject'))));
+  });
+  box.append(grid);
+  if(list.some(x=>!x.seen)) api('POST','/portraits/seen',{}).then(()=>{ (S.portraitPending||[]).forEach(x=>{x.seen=true;}); renderNav(route()); }).catch(()=>{});
+  return box;
 }
 
 function subInbox(){
@@ -1580,12 +1692,15 @@ function loadPortraits(){
   return portraitsP;
 }
 async function loadAll(){
-  const [w,e,c,pics] = await Promise.all([api('GET','/wrestlers'), api('GET','/events'), api('GET','/championships'), loadPortraits()]);
+  const [w,e,c,pics,pinfo] = await Promise.all([api('GET','/wrestlers'), api('GET','/events'), api('GET','/championships'), loadPortraits(), api('GET','/portraits').catch(()=>({}))]);
+  const pver=(pinfo&&pinfo.versions)||{};
+  S.portraitVer=pver; S.portraitMine=(pinfo&&pinfo.mine)||null; S.portraitPending=(pinfo&&pinfo.pending)||[];
   const wm={}, em={};
   w.wrestlers.forEach(x=>{
     wm[x.id]=x;
     const f=!x.image&&pics[String(x.ringName||'').trim().toLowerCase()];
     if(f&&/^[\w.\-]+$/.test(f)) x.image='img/wrestlers/'+f;
+    if(pver[x.id]) x.image=window.USCW_CONFIG.API_BASE+'/api/portrait/'+encodeURIComponent(x.id)+'?v='+pver[x.id];   // an approved player portrait wins
   }); e.events.forEach(x=>{em[x.id]=x;});
   const sig = JSON.stringify([wm,em,c.championships]);
   const changed = sig!==S.sig;
