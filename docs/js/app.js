@@ -769,12 +769,17 @@ function sndFadeOut(ms,duck){
 function sndStop(){ clearInterval(SND.fade); if(SND.music){ try{SND.music.pause();}catch(_){} SND.music=null; } }
 // Call from a click so browsers allow sound later.
 function sndUnlock(){ try{ const a=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='); a.play().catch(()=>{}); }catch(_){} }
-function sndPlay(cue,force,keep){
+// An entrance theme loops; after a few seconds it drops to 40% so the announcers can be heard over it.
+function sndDuck(a){
+  const full=a.volume, low=full*0.4;
+  SND.duck=setTimeout(()=>{ const t0=Date.now(); const iv=setInterval(()=>{ if(SND.music!==a){ clearInterval(iv); return; } const k=Math.min(1,(Date.now()-t0)/1500); try{ a.volume=full+(low-full)*k; }catch(_){} if(k>=1) clearInterval(iv); },100); },4000);
+}
+function sndPlay(cue,force,keep,loop){
   try{
     if(!cue||(!force&&!SND.pref.on)) return false;
     const f=sndFile(cue); if(!f) return false;
     const a=new Audio('audio/'+encodeURI(f)); a.volume=Math.max(0,Math.min(1,SND.pref.vol));
-    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); SND.keep=!!keep; }
+    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); SND.keep=!!keep; if(loop){ a.loop=true; sndDuck(a); } }
     a.addEventListener('error',()=>{ if(SND.music===a) SND.music=null; });
     const pr=a.play(); if(pr&&pr.catch) pr.catch(()=>{});
     return true;
@@ -784,10 +789,11 @@ function sndPlay(cue,force,keep){
 // The show theme is long: it drops under the announcers and fades slowly. Other music fades out quickly.
 // A theme marked keep (a winner's theme, or an entrance in a promo) plays through plain beats; new music or a new segment fades it.
 function sndBeat(cue,keep,newSeg,win){
-  const music=win||sndIsMusic(cue||'');
-  if(SND.music&&!(SND.keep&&!newSeg&&!music)) (SND.intro?sndFadeOut(22000,0.35):sndFadeOut(4000));
-  if(cue) sndPlay(cue,false,keep&&sndIsMusic(cue));
-  if(win) sndPlay('entrance:'+win,false,true);
+  const music=!!win||sndIsMusic(cue||'');
+  // An entrance theme keeps looping until the next music starts, the bell rings or the segment changes.
+  if(SND.music&&!(SND.keep&&!newSeg&&!music&&cue!=='bell')) (SND.intro?sndFadeOut(22000,0.35):sndFadeOut(cue==='bell'?1500:(music&&SND.keep?1000:4000)));
+  if(cue) sndPlay(cue,false,(cue||'').startsWith('entrance'),(cue||'').startsWith('entrance')&&!win);
+  if(win) sndPlay('entrance:'+win,false,true,false);
 }
 
 // A pin or rope-break count: a beat that is only the numbers, e.g. "1 2" or "1 2 3". The page times it and plays the crowd count.

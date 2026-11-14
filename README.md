@@ -195,3 +195,6 @@ Run `node tools/stamp.js` before each commit that changes anything in `docs/` â€
 ## Winner and promo themes
 - When a match has a winner, that wrestler's theme plays at the winner announcement (the last beat that names a winner) and runs to the end of its clip. It stops early only when other music starts or the next segment begins.
 - In promos, backstage segments and angles, an `entrance:<id>` cue also plays the theme through following beats. The AI prompt asks for these cues when a wrestler walks to the ring.
+
+## Entrance themes in matches
+An entrance theme loops under the announcers (dropping to 40% volume after a few seconds) until the next theme starts, the bell cue plays, or the segment changes. `docs/audio/bell.mp3` is the bell sound.
