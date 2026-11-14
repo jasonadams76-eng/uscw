@@ -789,7 +789,7 @@ RULES:
 - Use only the facts you are given. Do not invent championships, results, injuries, family members or backstories. All wrestlers are fictional.
 - Keep any outcome exactly as instructed. Never change who wins.
 - Write in the present tense. Keep it PG-13: brawls, chair shots and trash talk are fine; no slurs, no real-world politics or real people other than the cast above, nothing sexual.
-- Formatting inside each beat: cast and announcer lines as Mike Johnson: “...”, Earl Backwater: “...”, Cindy Maxwell: “...”, and so on; wrestler dialogue as Ring Name: “...”; action as plain narration.
+- Formatting inside each beat: cast and announcer lines as Mike Johnson: “...”, Earl Backwater: “...”, Cindy Maxwell: “...”, and so on; wrestler dialogue as Ring Name: “...”. Anything that describes action instead of words someone says (what the crowd or camera shows, entrances, who does what in the ring, what a wrestler does) is a beat of its own wrapped in parentheses, written in the present tense, for example (Harrison hooks the leg and drives Paco into the corner. The crowd rises as Paco fights to his feet.). A parenthesized beat may run a few sentences as long as it describes something and moves the story forward. Never mix spoken lines and parenthesized action in the same beat, and never leave action as plain unparenthesized narration.
 - Each beat is one short chunk of 20 to 110 words. Reach the requested total word count within about 15 percent.
 - Optional sound cue per beat, used sparingly and only when it fits: ${AI_CUES.join(', ')}, or entrance:<wrestlerId> for a wrestler's entrance (use only the ids provided). Otherwise use an empty string.
 - pause is whole seconds (0 to 6) to hold after the beat; mostly 0 or 1.
@@ -837,7 +837,7 @@ ${base ? `A plain draft already exists. Rewrite it so it reads like a real broad
   } else if (b.kind === 'polish') {
     const base = b.base.map((x, i) => `${i + 1}. ${x.text}`).join('\n\n');
     task = `TASK: POLISH a ${seg.type === 'promo' ? 'promo / interview' : seg.type === 'backstage' ? 'backstage segment' : seg.type === 'angle' ? 'angle / brawl' : 'segment'} that a player wrote for their own wrestler${sidesTxt ? ` (involving ${sidesTxt})` : ''}${seg.title ? `. Title: ${seg.title}` : ''}. Rewrite it so it fits the rest of the show and reads like a real broadcast, at roughly the same length (about ${b.baseWords} words; do not pad it and do not cut it by more than a fifth).
-KEEP the player's content: who says and does what, the order of events, their key lines and jokes, and how it ends. Tidy grammar, spelling and pacing. Put speech in the required format with the right ring names. Where the player wrote plain description, turn it into narration. Mike Johnson and Earl Backwater may add a short setup or reaction, but never overshadow the scene. Do not add wrestlers who are not part of it, and do not change any result, who wins or loses, or any storyline fact.
+KEEP the player's content: who says and does what, the order of events, their key lines and jokes, and how it ends. Tidy grammar, spelling and pacing. Put speech in the required format with the right ring names. Where the player wrote plain description, turn it into a parenthesized action beat. Mike Johnson and Earl Backwater may add a short setup or reaction, but never overshadow the scene. Do not add wrestlers who are not part of it, and do not change any result, who wins or loses, or any storyline fact.
 Split it into beats of 20 to 110 words, and add sound cues or pauses only where they fit.
 THE PLAYER'S TEXT:\n${base}`;
   } else if (seg.type === 'match') {
@@ -1002,10 +1002,18 @@ async function aiDraft(request, env) {
     x = x && typeof x === 'object' ? x : {};
     const cue = typeof x.cue === 'string' ? x.cue.trim() : '';
     const good = AI_CUES.includes(cue) || (cue.startsWith('entrance:') && ok.has(cue.slice(9)));
-    return { text: x.text, pause: Math.min(6, Number(x.pause) || 0), cue: good ? cue : '' };
+    return { text: aiAction(x.text), pause: Math.min(6, Number(x.pause) || 0), cue: good ? cue : '' };
   }));
   if (!out.length) throw new HttpError(502, 'Gemini’s reply was empty. Please try again.');
   return json({ ok: true, beats: out, model, fellBack });
+}
+// Action beats must be in parentheses. Dialogue (Name: “...”) and pin counts (1 2) are left alone.
+function aiAction(t) {
+  t = typeof t === 'string' ? t.trim() : '';
+  if (!t || /^[\s.1-4]+$/.test(t) && /[1-4]/.test(t)) return t;
+  if (/^\(/.test(t) && /\)$/.test(t)) return t;
+  if (/^[^\n:“"(]{1,40}:\s*[“"‘']/.test(t)) return t;
+  return '(' + t + ')';
 }
 function aiFail(e) {
   if (e instanceof HttpError) return e;

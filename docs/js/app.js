@@ -313,7 +313,7 @@ function draftIntro(d){
   const place=venue?venue+(city?' in '+city:''):(city||'the arena');
   const title=(d.title||'').trim()||'Monday Night Mayhem';
   const night=d.date?new Date(+d.date.slice(0,4),+d.date.slice(5,7)-1,+d.date.slice(8,10)).toLocaleDateString('en-US',{weekday:'long'}):'';
-  beats.push({cue:'intro_music',pause:2,text:'The screen goes black. A single spotlight snaps on, the '+title+' logo explodes onto the screen, and the show’s theme music thunders through the building.'});
+  beats.push({cue:'intro_music',pause:2,text:'(The screen goes black. A single spotlight snaps on, the '+title+' logo explodes onto the screen, and the show’s theme music thunders through the building.)'});
   const crowd=[
     'The cameras sweep across a packed '+(venue||'arena')+', a sea of fans on their feet as the lights flash and the noise keeps building.',
     'A hand-held camera dives into the front rows: kids on shoulders, fans pounding the barricade, and signs for every superstar on the roster bobbing overhead.',
@@ -324,7 +324,7 @@ function draftIntro(d){
     'Fans crane toward the giant video screen as the USCW logo flashes across it, and the crowd answers with a thunderous roar.'
   ];
   if(city) crowd.push(city+' has shown up in force tonight, and you can feel it in every shot of the building.');
-  shuffle(crowd).slice(0,3).forEach((t,i)=>beats.push({text:t,pause:1,cue:i===1?'crowd_pop':''}));
+  shuffle(crowd).slice(0,3).forEach((t,i)=>beats.push({text:'('+t+')',pause:1,cue:i===1?'crowd_pop':''}));
   beats.push({cue:'',pause:1,text:say(pick([
     'Ladies and gentlemen, welcome to '+title+', live from '+place+'! I’m Mike Johnson, and you are not going to believe the show USCW has in store for you '+(night?'this '+night+' ':'')+'night!',
     'Good evening, everybody, and welcome to '+title+', coming to you live from '+place+'! This is Mike Johnson, and tonight is one you will be talking about for a long time!',
@@ -876,7 +876,7 @@ function pageWatch(id){
       nums.slice(0,upTo).forEach((n,i)=>{ if(i) p.append(h('span',{class:'d'},' · · · · · ')); p.append(h('span',{class:'n'},String(n))); });
       return p;
     }
-    function instant(b){ if(b.seg) segHeader(b.seg); if(b.text) feed.append(isCountBeat(b.text)?countEl(b.text.match(/[1-4]/g).map(Number),9):h('p',{class:'w-beat'},b.text)); shownOne(); }
+    function instant(b){ if(b.seg) segHeader(b.seg); if(b.text) feed.append(isCountBeat(b.text)?countEl(b.text.match(/[1-4]/g).map(Number),9):h('p',{class:'w-beat'+(/^\s*\(/.test(b.text)?' w-act':'')},b.text)); shownOne(); }
     function playNext(){
       if(stopped||st.paused||st.busy||st.finished) return;
       const b=st.queue.shift();
@@ -887,7 +887,7 @@ function pageWatch(id){
       const runBeat=()=>{
         sndBeat(b.cue||'');
         const was1=nearBottom();
-        const p=h('p',{class:'w-beat'}); feed.append(p);
+        const p=h('p',{class:'w-beat'+(/^\s*\(/.test(b.text||'')?' w-act':'')}); feed.append(p);
         follow(was1||was);
         if(isCountBeat(b.text)){
           const nums=b.text.match(/[1-4]/g).map(Number), pin=nums[nums.length-1]===3&&nums.length>=3;

@@ -301,3 +301,6 @@ nav a.on .badge{box-shadow:0 0 0 2px var(--navy)}
 .w-count .d{font-size:26px;font-weight:400;opacity:.55;white-space:pre}
 @keyframes countPop{0%{transform:scale(2.1);opacity:0}100%{transform:none;opacity:1}}
 @media(max-width:600px){.w-count{font-size:38px}}
+
+/* Action beats, written in parentheses */
+.w-act{font-style:italic;opacity:.85}
