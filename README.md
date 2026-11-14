@@ -191,3 +191,7 @@ Run `node tools/stamp.js` before each commit that changes anything in `docs/` â€
 ## Wrestler portraits and entrance themes
 - Portraits: put an image in `docs/img/wrestlers/` and add `"ring name lower case": "file.webp"` to `images.json`. Shown on Superstars tiles, champion cards and match headers.
 - Entrance themes: `docs/audio/sounds.json` `entrances` maps a lower-case ring name (or wrestler id) to a ~30 s clip.
+
+## Winner and promo themes
+- When a match has a winner, that wrestler's theme plays at the winner announcement (the last beat that names a winner) and runs to the end of its clip. It stops early only when other music starts or the next segment begins.
+- In promos, backstage segments and angles, an `entrance:<id>` cue also plays the theme through following beats. The AI prompt asks for these cues when a wrestler walks to the ring.

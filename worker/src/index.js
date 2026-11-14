@@ -564,12 +564,20 @@ function buildTimeline(data) {
     if (!list.length) continue;
     if (!first) t += SEG_GAP;
     first = false;
+    // The winner's theme plays when the winner is announced: the last beat that names a winner, else the last beat of the match.
+    let winIdx = -1, winId = '';
+    const wside = s.type === 'match' && s.result && Number.isInteger(s.result.winner) && s.result.winner >= 0 ? (s.sides || [])[s.result.winner] : null;
+    if (wside && wside[0]) {
+      winId = String(wside[0]);
+      for (let k = list.length - 1; k >= 0 && winIdx < 0; k--) if (/\b(winner|wins|victorious|victory|new\b.{0,25}champion)\b/i.test(list[k].text || '')) winIdx = k;
+      if (winIdx < 0) for (let k = list.length - 1; k >= 0; k--) if ((list[k].text || '').trim() && !/^[\s.1-4]+$/.test(list[k].text)) { winIdx = k; break; }
+    }
     list.forEach((b, j) => {
       const words = (b.text.match(/\S+/g) || []).length;
       const nums = /^[\s.1-4]+$/.test(b.text) ? b.text.match(/[1-4]/g) : null;   // a pin count: one second per number, the 2 of a kickout hangs about half a second
       const dur = (nums ? (nums.length - 1) + (nums[nums.length - 1] === '2' ? 0.5 : 0.1) : Math.max(1.5, words / REVEAL_WPS) + (b.text.match(/[.!?][”"')\]]*(?=\s)/g) || []).length * BREATH) + (b.pause || 0);
       beats.push({
-        t, dur, text: b.text, cue: b.cue || '', pause: b.pause || 0,
+        t, dur, text: b.text, cue: b.cue || '', pause: b.pause || 0, win: j === winIdx ? winId : '',
         seg: j === 0 ? { id: s.id, type: s.type, title: s.title || '', stip: s.stip || '', sides: s.sides || [], length: s.length } : null
       });
       t += dur;
@@ -621,7 +629,7 @@ async function watchScript(request, env, id) {
   const elapsed = (Date.now() - v.started_at) / 1000 * v.speed;
   const due = []; let nextIn = null;
   tl.beats.forEach((b, i) => {
-    if (b.t <= elapsed) { if (i >= after) due.push({ i, text: b.text, cue: b.cue, pause: b.pause, dur: b.dur, seg: b.seg }); }
+    if (b.t <= elapsed) { if (i >= after) due.push({ i, text: b.text, cue: b.cue, win: b.win || '', pause: b.pause, dur: b.dur, seg: b.seg }); }
     else if (nextIn === null) nextIn = (b.t - elapsed) / v.speed;
   });
   return json({ beats: due, total: tl.beats.length, nextIn, speed: v.speed, done: nextIn === null });
@@ -792,6 +800,7 @@ RULES:
 - Write in the present tense. Keep it PG-13: brawls, chair shots and trash talk are fine; no slurs, no real-world politics or real people other than the cast above, nothing sexual.
 - Formatting inside each beat: cast and announcer lines as Mike Johnson: “...”, Earl Backwater: “...”, Cindy Maxwell: “...”, and so on; wrestler dialogue as Ring Name: “...”. Anything that describes action instead of words someone says (what the crowd or camera shows, entrances, who does what in the ring, what a wrestler does) is a beat of its own wrapped in parentheses, written in the present tense, for example (Harrison hooks the leg and drives Paco into the corner. The crowd rises as Paco fights to his feet.). A parenthesized beat may run a few sentences as long as it describes something and moves the story forward. Never mix spoken lines and parenthesized action in the same beat, and never leave action as plain unparenthesized narration.
 - Each beat is one short chunk of 20 to 110 words. Reach the requested total word count within about 15 percent.
+- Whenever a wrestler walks to the ring during a promo, interview or angle, give that arrival its own short parenthesized beat, for example (Paco Rodriguez makes his way to the ring.), with the cue entrance:<wrestlerId> so his theme music plays. Do the same for any wrestler who comes out in the show intro.
 - Optional sound cue per beat, used sparingly and only when it fits: ${AI_CUES.join(', ')}, or entrance:<wrestlerId> for a wrestler's entrance (use only the ids provided). Otherwise use an empty string.
 - pause is whole seconds (0 to 6) to hold after the beat; mostly 0 or 1.
 Return only JSON in the requested shape.`;

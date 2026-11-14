@@ -769,12 +769,12 @@ function sndFadeOut(ms,duck){
 function sndStop(){ clearInterval(SND.fade); if(SND.music){ try{SND.music.pause();}catch(_){} SND.music=null; } }
 // Call from a click so browsers allow sound later.
 function sndUnlock(){ try{ const a=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='); a.play().catch(()=>{}); }catch(_){} }
-function sndPlay(cue,force){
+function sndPlay(cue,force,keep){
   try{
     if(!cue||(!force&&!SND.pref.on)) return false;
     const f=sndFile(cue); if(!f) return false;
     const a=new Audio('audio/'+encodeURI(f)); a.volume=Math.max(0,Math.min(1,SND.pref.vol));
-    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); }
+    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); SND.keep=!!keep; }
     a.addEventListener('error',()=>{ if(SND.music===a) SND.music=null; });
     const pr=a.play(); if(pr&&pr.catch) pr.catch(()=>{});
     return true;
@@ -782,7 +782,13 @@ function sndPlay(cue,force){
 }
 // A new beat arrives: let any music fade away under it, then play the beat's own sound.
 // The show theme is long: it drops under the announcers and fades slowly. Other music fades out quickly.
-function sndBeat(cue){ if(SND.music) (SND.intro?sndFadeOut(22000,0.35):sndFadeOut(4000)); if(cue) sndPlay(cue); }
+// A theme marked keep (a winner's theme, or an entrance in a promo) plays through plain beats; new music or a new segment fades it.
+function sndBeat(cue,keep,newSeg,win){
+  const music=win||sndIsMusic(cue||'');
+  if(SND.music&&!(SND.keep&&!newSeg&&!music)) (SND.intro?sndFadeOut(22000,0.35):sndFadeOut(4000));
+  if(cue) sndPlay(cue,false,keep&&sndIsMusic(cue));
+  if(win) sndPlay('entrance:'+win,false,true);
+}
 
 // A pin or rope-break count: a beat that is only the numbers, e.g. "1 2" or "1 2 3". The page times it and plays the crowd count.
 const COUNT_RE=/^\s*[1-4](?:[\s.]+[1-4])*[\s.]*$/;
@@ -890,15 +896,17 @@ function pageWatch(id){
       return p;
     }
     function instant(b){ if(b.seg) segHeader(b.seg); if(b.text) feed.append(isCountBeat(b.text)?countEl(b.text.match(/[1-4]/g).map(Number),9):h('p',{class:'w-beat'+(/^\s*\(/.test(b.text)?' w-act':'')},b.text)); shownOne(); }
+    let curType='';
     function playNext(){
       if(stopped||st.paused||st.busy||st.finished) return;
       const b=st.queue.shift();
       if(!b){ if(st.done&&st.received>=st.total&&st.shown>=st.total) finish(); return; }
       st.busy=true; const was=nearBottom();
+      if(b.seg) curType=b.seg.type;
       const hold=b.seg?segHeader(b.seg,true):0;
       if(hold>0) follow(was);
       const runBeat=()=>{
-        sndBeat(b.cue||'');
+        sndBeat(b.cue||'',curType!=='match',!!b.seg,b.win||'');
         const was1=nearBottom();
         const p=h('p',{class:'w-beat'+(/^\s*\(/.test(b.text||'')?' w-act':'')}); feed.append(p);
         follow(was1||was);
