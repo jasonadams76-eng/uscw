@@ -326,7 +326,8 @@ const ALIGNMENTS = ['Face', 'Heel', 'Tweener'];
 const MOVE_KEYS = ['strikes', 'grapples', 'submissions', 'aerial', 'signature'];
 
 const MOVE_LABELS = { strikes: 'Strikes & Kicks', grapples: 'Slams, Suplexes & Power Moves', submissions: 'Submissions', aerial: 'High-Flying & Aerial', signature: 'Signature Moves & Taunts' };
-function cleanWrestler(b) {
+const GENDERS = ['Male', 'Female', 'Non-binary'];
+function cleanWrestler(b, isNew) {
   const need = (v, label) => { if (!v) throw new HttpError(400, label + ' is required.'); return v; };
   const ringName = need(str(b.ringName, 60), 'Ring name');
   const nickname = need(str(b.nickname, 80), 'Nickname');
@@ -347,16 +348,27 @@ function cleanWrestler(b) {
     moves[k] = (Array.isArray(inMoves[k]) ? inMoves[k] : []).map(m => str(m, 120)).filter(Boolean).slice(0, 60);
     if (!moves[k].length) throw new HttpError(400, 'Add at least one move under ' + (MOVE_LABELS[k] || k) + '.');
   }
+  // Appearance + gender are required on a new application; an existing wrestler can be edited without them.
+  const ap = b.appearance && typeof b.appearance === 'object' ? b.appearance : {};
+  const look = str(ap.look, 600), gear = str(ap.gear, 600);
+  const gender = GENDERS.includes(b.gender) ? b.gender : '';
+  if (isNew) {
+    if (!gender) throw new HttpError(400, 'Gender is required.');
+    if (!look) throw new HttpError(400, 'Describe your physical appearance.');
+    if (!gear) throw new HttpError(400, 'Describe your ring gear.');
+  }
   const fin = b.finisher && typeof b.finisher === 'object' ? b.finisher : {};
   const finName = need(str(fin.name, 80), 'Finisher name');
   const finDesc = need(str(fin.desc, 600), 'Finisher description');
   return {
     ringName, nickname, realName, age, hometown, height, weight,
     alignment: b.alignment, style, theme, bio,
+    gender, appearance: { look, gear },
     moves, finisher: { name: finName, desc: finDesc }
   };
 }
 // Real name and move set are for the CEO and the wrestler's own player only; nobody else ever receives them.
+const isUnapproved = r => { try { const st = JSON.parse(r.data).status; return st === 'pending' || st === 'declined'; } catch (_) { return false; } };
 const wrestlerOut = (r, user) => {
   const w = { id: r.id, ownerId: r.owner_id, ...JSON.parse(r.data) };
   const full = user && (user.isAdmin || user.id === r.id || user.id === r.owner_id);
@@ -371,18 +383,29 @@ async function wrestlerRoutes(request, env, id) {
     if (id) {
       const r = await env.DB.prepare('SELECT * FROM wrestlers WHERE id = ?').bind(id).first();
       if (!r) throw new HttpError(404, 'Wrestler not found');
+      if (isUnapproved(r) && !(viewer && (viewer.isAdmin || viewer.id === r.owner_id || viewer.id === r.id))) throw new HttpError(404, 'Wrestler not found');
       return json({ wrestler: wrestlerOut(r, viewer) });
     }
     const { results } = await env.DB.prepare('SELECT * FROM wrestlers ORDER BY ring_name COLLATE NOCASE').all();
-    return json({ wrestlers: results.map(r => wrestlerOut(r, viewer)) });
+    // Applications awaiting (or refused by) the CEO are not on the roster: the CEO sees all of them, a player only their own.
+    const roster = results.filter(r => !isUnapproved(r));
+    const apps = results.filter(r => isUnapproved(r) && viewer && (viewer.isAdmin || viewer.id === r.owner_id || viewer.id === r.id));
+    return json({ wrestlers: roster.map(r => wrestlerOut(r, viewer)), applications: apps.map(r => wrestlerOut(r, viewer)) });
   }
   const user = await getUser(request, env, true);
   if (!id) throw new HttpError(404, 'Not found');
   if (method === 'PUT') {
     if (id !== user.id && !user.isAdmin) throw new HttpError(403, 'You can only edit your own wrestler.');
-    const data = cleanWrestler(await readJson(request));
     const now = Date.now();
-    const existing = await env.DB.prepare('SELECT owner_id FROM wrestlers WHERE id = ?').bind(id).first();
+    const existing = await env.DB.prepare('SELECT owner_id, data FROM wrestlers WHERE id = ?').bind(id).first();
+    const data = cleanWrestler(await readJson(request), !existing);
+    // New player applications wait for the CEO. Edits keep the current status; a refused application goes back to pending when its owner revises it.
+    if (!existing) { if (!user.isAdmin) data.status = 'pending'; }
+    else {
+      let old = {}; try { old = JSON.parse(existing.data); } catch (_) { /* ignore */ }
+      if (old.status === 'pending') data.status = 'pending';
+      else if (old.status === 'declined') { data.status = user.isAdmin ? 'declined' : 'pending'; if (user.isAdmin && old.appNote) data.appNote = old.appNote; }
+    }
     const owner = existing ? existing.owner_id : (id === user.id ? user.id : null);
     await env.DB.prepare(
       `INSERT INTO wrestlers (id, owner_id, ring_name, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
@@ -497,6 +520,87 @@ async function backfillFeuds(env, stories) {
   }
   for (const x of dirty) await saveStoryRow(env, x, cleanStory(stories[x]));
 }
+/* ---------------- wrestler applications (CEO approval) ---------------- */
+async function applicationRoutes(request, env, id) {
+  const user = await getUser(request, env, true);
+  if (!user.isAdmin) throw new HttpError(403, 'Only the CEO can review applications.');
+  if (request.method !== 'PUT') throw new HttpError(405, 'Method not allowed');
+  const r = await env.DB.prepare('SELECT * FROM wrestlers WHERE id = ?').bind(id).first();
+  if (!r) throw new HttpError(404, 'Application not found');
+  const b = await readJson(request);
+  const w = JSON.parse(r.data);
+  if (b.decision === 'approve') { delete w.status; delete w.appNote; }
+  else if (b.decision === 'decline') { w.status = 'declined'; w.appNote = str(b.note, 500); }
+  else throw new HttpError(400, 'Choose approve or decline.');
+  await env.DB.prepare('UPDATE wrestlers SET data = ?, updated_at = ? WHERE id = ?').bind(JSON.stringify(w), Date.now(), id).run();
+  return json({ ok: true });
+}
+/* ---------------- AI wrestler image (Gemini), one per player per 24 hours ---------------- */
+// The prompt Jason wrote. Only appearance, ring gear, gender, height and weight ever go into it: no names, age, hometown or email.
+const IMAGE_PROMPT = (look, gear, gender, height, weight) =>
+  `Create a professional quality image of a professional wrestler. Here is their description: ${look.replace(/[.\s]+$/, '')}. ${gear.replace(/[.\s]+$/, '')}. They are ${gender}, ${height} tall and weigh ${weight} pounds.`;
+const IMAGE_COOLDOWN_MS = 24 * 3600 * 1000;
+let portraitGenReady = null;
+function ensurePortraitGen(env) {
+  if (!portraitGenReady) {
+    portraitGenReady = env.DB.prepare('CREATE TABLE IF NOT EXISTS portrait_gen (user_id TEXT PRIMARY KEY, last_at INTEGER NOT NULL DEFAULT 0)').run()
+      .catch(e => { portraitGenReady = null; throw e; });
+  }
+  return portraitGenReady;
+}
+async function portraitGenerate(request, env) {
+  if (request.method !== 'POST') throw new HttpError(405, 'Method not allowed');
+  const user = await getUser(request, env, true);
+  if (!env.GEMINI_API_KEY) throw new HttpError(503, 'Image generation is not set up yet.');
+  const b = await readJson(request, 20 * 1024);
+  const look = str(b.look, 600), gear = str(b.gear, 600), height = str(b.height, 20), weight = str(b.weight, 10);
+  const gender = GENDERS.includes(b.gender) ? b.gender : '';
+  if (!look || !gear || !gender || !height || !/^\d{2,3}$/.test(weight)) throw new HttpError(400, 'Fill in appearance, ring gear, gender, height and weight first.');
+  await ensurePortraitGen(env);
+  const now = Date.now();
+  let prev = 0;
+  if (!user.isAdmin) {
+    await env.DB.prepare('INSERT OR IGNORE INTO portrait_gen (user_id, last_at) VALUES (?, 0)').bind(user.id).run();
+    const row = await env.DB.prepare('SELECT last_at FROM portrait_gen WHERE user_id = ?').bind(user.id).first();
+    prev = row ? row.last_at : 0;
+    // Claim the slot atomically so two quick clicks cannot both go through.
+    const claim = await env.DB.prepare('UPDATE portrait_gen SET last_at = ? WHERE user_id = ? AND last_at <= ?').bind(now, user.id, now - IMAGE_COOLDOWN_MS).run();
+    if (!(claim.meta && claim.meta.changes > 0)) {
+      const e = new HttpError(429, 'You can generate one image every 24 hours.');
+      e.nextAt = prev + IMAGE_COOLDOWN_MS; throw e;
+    }
+  }
+  const refund = () => user.isAdmin ? null : env.DB.prepare('UPDATE portrait_gen SET last_at = ? WHERE user_id = ?').bind(prev, user.id).run();
+  const model = env.GEMINI_MODEL_IMAGE || 'gemini-3.1-flash-image';
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 70000);
+  let res, data;
+  try {
+    res = await fetch(`${env.GEMINI_BASE_URL || GEMINI_BASE}${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: IMAGE_PROMPT(look, gear, gender, height, weight) }] }],
+        generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '9:16' } }
+      })
+    });
+    data = await res.json().catch(() => ({}));
+  } catch (e) {
+    await refund();
+    throw new HttpError(504, 'The image service took too long. Try again in a moment.');
+  } finally { clearTimeout(timer); }
+  let img = null;
+  for (const c of (data.candidates || [])) for (const p of ((c.content || {}).parts || [])) {
+    const d = p.inlineData || p.inline_data;
+    if (d && d.data) { img = { data: d.data, mime: d.mimeType || d.mime_type || 'image/png' }; break; }
+  }
+  if (!res.ok || !img) {
+    await refund();      // nothing came back, so it does not use up their one try
+    if (res.ok || res.status === 400) throw new HttpError(422, 'The image service could not make a picture from that description. Adjust the appearance or ring gear and try again.');
+    throw new HttpError(502, 'The image service had a problem. Try again in a moment.');
+  }
+  return json({ image: img.data, mime: img.mime, nextAt: user.isAdmin ? 0 : now + IMAGE_COOLDOWN_MS });
+}
 /* ---------------- wrestler portraits (player submissions with CEO approval) ---------------- */
 // One row per wrestler: the approved portrait (cur_*) and at most one pending submission (pend_*). Stored as small base64 WebP/JPEG/PNG.
 let portraitsReady = null;
@@ -523,7 +627,8 @@ async function portraitList(request, env) {
   const user = await getUser(request, env, false);
   await ensurePortraits(env);
   const { results } = await env.DB.prepare("SELECT wrestler_id, cur_ver, pend_at, pend_seen, outcome, note, (pend_data != '') AS has_pend FROM portraits").all();
-  const out = { versions: {}, mine: null, pending: [] };
+  const out = { versions: {}, mine: null, pending: [], genNextAt: 0 };
+  if (user && !user.isAdmin) { try { await ensurePortraitGen(env); const g = await env.DB.prepare('SELECT last_at FROM portrait_gen WHERE user_id = ?').bind(user.id).first(); if (g && g.last_at) out.genNextAt = g.last_at + IMAGE_COOLDOWN_MS; } catch (_) { /* optional */ } }
   for (const r of results) {
     if (r.cur_ver > 0) out.versions[r.wrestler_id] = r.cur_ver;
     if (user && r.wrestler_id === user.id) out.mine = { pending: !!r.has_pend, at: r.pend_at, outcome: r.outcome, note: r.note };
@@ -1017,8 +1122,9 @@ async function submissionRoutes(request, env, id) {
     return json({ ok: true });
   }
   if (method === 'POST' && !id) {
-    const w = await env.DB.prepare('SELECT id FROM wrestlers WHERE id = ?').bind(user.id).first();
+    const w = await env.DB.prepare('SELECT id, data FROM wrestlers WHERE id = ?').bind(user.id).first();
     if (!w) throw new HttpError(400, 'Create your wrestler first.');
+    if (isUnapproved(w)) throw new HttpError(403, 'Your Superstar Hub unlocks once the CEO approves your contract.');
     const d = cleanSub(await readJson(request));
     const open = await env.DB.prepare("SELECT COUNT(*) AS n FROM submissions WHERE wrestler_id = ? AND status = 'pending'").bind(user.id).first();
     if (open && open.n >= MAX_OPEN_SUBS)
@@ -1082,6 +1188,7 @@ VOICES (keep them identical in every segment):
 
 RULES:
 - Use only the facts you are given. Do not invent championships, results, injuries, family members or backstories. All wrestlers are fictional.
+- A wrestler's profile may list their Appearance and Ring gear. Mike, Earl, Cindy and the interviewers may mention these naturally and only now and then (an entrance, a close-up, a joke from Earl), using only what the profile says. Never invent gear, colors or looks that are not listed.
 - Keep any outcome exactly as instructed. Never change who wins.
 - Write in the present tense. Keep it PG-13: brawls, chair shots and trash talk are fine; no slurs, no real-world politics or real people other than the cast above, nothing sexual.
 - Formatting inside each beat: cast and announcer lines as Mike Johnson: “...”, Earl Backwater: “...”, Cindy Maxwell: “...”, and so on; wrestler dialogue as Ring Name: “...”. Anything that describes action instead of words someone says (what the crowd or camera shows, entrances, who does what in the ring, what a wrestler does) is a beat of its own wrapped in parentheses, written in the present tense, for example (Harrison hooks the leg and drives Paco into the corner. The crowd rises as Paco fights to his feet.). A parenthesized beat may run a few sentences as long as it describes something and moves the story forward. Never mix spoken lines and parenthesized action in the same beat, and never leave action as plain unparenthesized narration.
@@ -1102,6 +1209,8 @@ function aiProfile(r, facts, levels) {
   const lines = [
     `- ${w.ringName} (id: ${r.id})${w.nickname ? ` “${w.nickname}”` : ''}: ${w.alignment || 'Tweener'}, ${w.style || 'all-rounder'}, from ${w.hometown || 'parts unknown'}.`,
     w.bio ? `  Bio: ${String(w.bio).slice(0, 700)}` : '',
+    w.appearance && w.appearance.look ? `  Appearance: ${String(w.appearance.look).slice(0, 400)}` : '',
+    w.appearance && w.appearance.gear ? `  Ring gear: ${String(w.appearance.gear).slice(0, 400)}` : '',
     f.name ? `  Finisher: ${f.name}${f.desc ? ' — ' + String(f.desc).slice(0, 300) : ''}` : '',
     moves ? `  Moves: ${moves.slice(0, 600)}` : '',
     levels && LEVEL_ATTITUDE[levels[r.id]] ? `  Announcer attitude (private, never say why): ${LEVEL_ATTITUDE[levels[r.id]]}.` : '',
@@ -1416,6 +1525,9 @@ async function route(request, env) {
   if (bm) return submissionRoutes(request, env, bm[1]);
   if (m === 'GET' && path === '/api/portraits') return portraitList(request, env);
   if (m === 'POST' && path === '/api/portraits/seen') return portraitsSeen(request, env);
+  if (m === 'POST' && path === '/api/portrait-generate') return portraitGenerate(request, env);
+  const am = path.match(/^\/api\/application\/([A-Za-z0-9_-]{1,64})$/);
+  if (am) return applicationRoutes(request, env, am[1]);
   const pm = path.match(/^\/api\/portrait\/([A-Za-z0-9_-]{1,64})(?:\/(pending))?$/);
   if (pm) return portraitRoutes(request, env, pm[1], pm[2]);
   const rm = path.match(/^\/api\/story-result\/(\d{1,12})$/);
@@ -1441,7 +1553,7 @@ export default {
     try {
       res = await route(request, env);
     } catch (e) {
-      if (e instanceof HttpError) res = json({ error: e.message, code: e.code }, e.status);
+      if (e instanceof HttpError) res = json({ error: e.message, code: e.code, nextAt: e.nextAt }, e.status);
       else { console.error(e); res = json({ error: 'Server error. Please try again.' }, 500); }
     }
     for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);

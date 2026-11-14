@@ -20,7 +20,7 @@ const $ = s => document.querySelector(s);
 /* ---------- state ---------- */
 const S = {
   db:null, user:null, uid:null, isCEO:false, canWrite:false,
-  wrestlers:{}, events:{}, champs:[], story:{}, loadedW:false, loadedE:false, failed:false, editing:false, draft:null
+  wrestlers:{}, apps:{}, events:{}, champs:[], story:{}, loadedW:false, loadedE:false, failed:false, editing:false, draft:null
 };
 
 const pleLogo=i=>'img/ple/ple-'+String(i+1).padStart(2,'0')+'.webp';
@@ -63,6 +63,7 @@ function fmtTime(t){ if(!t) return ''; const [hh,mm]=t.split(':').map(Number); c
 function uid8(){ return 'x'+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
 function lines(s){ return String(s||'').split('\n').map(x=>x.trim()).filter(Boolean); }
 function wname(id){ const w=S.wrestlers[id]; return w ? w.ringName : 'Unknown Wrestler'; }
+const wOf=id=>S.wrestlers[id]||S.apps[id];   // an approved wrestler, or the viewer's own (or, for the CEO, any) application
 function canEditW(id){ return S.isCEO || (S.canWrite && id===S.uid); }
 function upcomingEvents(ple){
   const t=todayISO();
@@ -103,11 +104,11 @@ function navTo(hash){ if(location.hash==='#'+hash) render(); else location.hash=
 function renderNav(r){
   const nav=$('#nav'); nav.replaceChildren();
   const items=[['home','Home'],['mayhem','Mayhem'],['superstars','Superstars'],['ples','PLE Calendar']];
-  if (S.user) items.push(['my-wrestler', S.wrestlers[S.uid] ? 'My Wrestler' : 'Create Wrestler']);
+  if (S.user) items.push(['my-wrestler', S.wrestlers[S.uid] ? 'My Wrestler' : (S.apps[S.uid] ? 'My Application' : 'Create Wrestler')]);
   if (S.user && S.wrestlers[S.uid]) items.push(['hub','My Hub']);
   if (S.isCEO) items.push(['ceo','CEO Office']);
   const active = r.name==='wrestler'?'superstars': (r.name==='event'||r.name==='watch')?((S.events[r.id]&&S.events[r.id].ple)?'ples':'mayhem'): (r.name==='ceo-new-event'||r.name==='ceo-edit')?'ceo': (r.name==='edit'&&r.id===S.uid)?'my-wrestler': r.name;
-  items.forEach(([k,l])=>nav.append(h('a',{href:'#'+k,class:active===k?'on':''},l,(k==='ceo'&&unseenSubs())?h('span',{class:'badge',title:unseenSubs()+' new player submission(s)'},unseenSubs()):null)));
+  items.forEach(([k,l])=>nav.append(h('a',{href:'#'+k,class:active===k?'on':''},l,(k==='ceo'&&unseenSubs())?h('span',{class:'badge',title:unseenSubs()+' item(s) waiting for you'},unseenSubs()):null)));
   if (S.user) nav.append(h('a',{href:'#home',onclick:e=>{e.preventDefault();doLogout();}},'Log out'));
   else { nav.append(h('a',{href:'#login',class:active==='login'?'on':''},'Log in')); nav.append(h('a',{href:'#register',class:active==='register'?'on':''},'Sign up')); }
 }
@@ -116,7 +117,7 @@ function renderNav(r){
 function pageHome(){
   const next=upcomingEvents(false)[0];
   const nextPle=upcomingEvents(true)[0];
-  const me=S.wrestlers[S.uid];
+  const me=wOf(S.uid);
   const wrap=h('div',{});
   wrap.append(h('div',{class:'hero'},
     h('div',{class:'cond',style:'color:var(--star);font-weight:700;font-size:15px'},'Live every Monday night'),
@@ -124,7 +125,7 @@ function pageHome(){
     h('h1',{class:'sr-only'},'United States Championship Wrestling'),
     h('p',{},'Create your wrestler. Build your legend. Step through the curtain on Monday Night Mayhem.'),
     h('div',{class:'row c'},
-      h('a',{class:'btn',href:S.user?'#my-wrestler':'#register'}, S.user?(me?'Edit My Wrestler':'Create Your Wrestler'):'Join USCW'),
+      h('a',{class:'btn',href:S.user?'#my-wrestler':'#register'}, S.user?(me?(S.apps[S.uid]?'My Application':'Edit My Wrestler'):'Create Your Wrestler'):'Join USCW'),
       h('a',{class:'btn alt',href:'#superstars'},'Meet the Superstars'),
       h('a',{class:'btn alt',href:'#mayhem'},'Monday Night Mayhem'))));
   wrap.append(h('div',{class:'sect'},
@@ -629,9 +630,11 @@ function storyPanel(id){
 }
 
 function pageWrestler(id){
-  const w=S.wrestlers[id];
+  const w=wOf(id);
   if(!w) return h('div',{class:'empty'},'That wrestler could not be found. ',h('a',{href:'#superstars',style:'color:var(--red2)'},'Back to the superstars'));
   const wrap=h('div',{});
+  if(w.status==='pending') wrap.append(h('div',{class:'notice'},S.isCEO?'This is a contract request waiting for your approval in the CEO Office.':'Your contract request is waiting for the CEO. Nobody else can see this wrestler until it is approved.'));
+  if(w.status==='declined') wrap.append(h('div',{class:'notice'},'Your contract request was not approved.'+(w.appNote?' CEO’s note: '+w.appNote:'')+' Edit your application and send it again.'));
   wrap.append(h('div',{class:'row',style:'margin-bottom:14px'},
     h('a',{href:'#superstars',class:'cond',style:'color:var(--muted)'},'← Superstars'),
     h('div',{style:'flex:1'}),
@@ -662,6 +665,9 @@ function pageWrestler(id){
       h('div',{class:'wp-fin'},w.finisher.name),
       w.finisher.desc?h('div',{class:'wp-fin-d'},w.finisher.desc):null):null,
     w.bio?h('div',{class:'wp-body'},h('h2',{},'Biography'),h('div',{class:'bio'},w.bio)):null,
+    (w.appearance&&(w.appearance.look||w.appearance.gear))?h('div',{class:'wp-body'},h('h2',{},'Appearance'),
+      w.appearance.look?h('div',{class:'bio'},w.appearance.look):null,
+      w.appearance.gear?h('div',{class:'bio',style:'margin-top:8px'},h('b',{},'Ring gear: '),w.appearance.gear):null):null,
     priv?h('div',{class:'wp-private'},
       h('div',{class:'cond wp-priv-h'},S.isCEO?'CEO only — hidden from the public':'Only you and the CEO can see this'),
       w.realName?h('div',{class:'stats',style:'margin-top:0'},stat('Real name',w.realName)):null,
@@ -689,13 +695,31 @@ function missingFields(F){
 function pageEditWrestler(id, isNew){
   if(!S.user) return h('div',{class:'notice'},'Please ',linkTo('#login','log in'),' or ',linkTo('#register','sign up'),' to create a wrestler.');
   if(!isNew && !canEditW(id)) return h('div',{class:'empty'},'You can only edit your own wrestler.');
-  const w=Object.assign({alignment:'Face'}, S.wrestlers[id]||{});
-  const mv=w.moves||{}, fin=w.finisher||{};
-  const F={};
-  const inp=(k,label,ph,type)=>h('div',{class:'f'},h('label',{class:'l'},label),F[k]=h('input',{type:type||'text',value:w[k]||'',placeholder:ph||'',maxlength:'120'}));
+  const w=Object.assign({alignment:'Face'}, wOf(id)||{});
+  const mv=w.moves||{}, fin=w.finisher||{}, ap=w.appearance||{};
+  const F={}; const gen={b64:null,url:''};
+  const inp=(k,label,ph,type)=>h('div',{class:'f'},h('label',{class:'l'},label),F[k]=h('input',{type:type||'text',value:w[k]||'',placeholder:ph||'',maxlength:'120',oninput:()=>{ if(F.refreshGen&&(k==='height'||k==='weight')) F.refreshGen(); }}));
+  const genBtn=h('button',{type:'button',class:'btn alt sm'},'Generate Wrestler Image');
+  const genNote=h('div',{class:'hint',style:'margin-top:6px'});
+  const genThumb=h('div',{});
+  function genBox(){ return h('div',{class:'f',style:'margin-top:4px'},h('div',{class:'row',style:'gap:10px'},genBtn),genNote,genThumb); }
+  F.refreshGen=()=>{
+    const wt=(F.weight&&F.weight.value||'').trim();
+    const ready=F.gender.value&&F.look.value.trim()&&F.gear.value.trim()&&(F.height.value||'').trim()&&/^\d{2,3}$/.test(wt);
+    const wait=!S.isCEO&&(S.portraitGenAt||0)>Date.now();
+    genBtn.disabled=!ready||wait;
+    genNote.textContent=wait?'You can generate another image after '+new Date(S.portraitGenAt).toLocaleString()+'.':(ready?'One image every 24 hours. You can use it with your application or skip it and add your own portrait later.':'Fill in gender, appearance, ring gear, height and weight to enable this.');
+  };
+  genBtn.onclick=()=>generateImage({look:F.look.value.trim(),gear:F.gear.value.trim(),gender:F.gender.value,height:F.height.value.trim(),weight:F.weight.value.trim()},async b64=>{
+    gen.b64=b64; F.refreshGen();
+    genThumb.replaceChildren(h('div',{class:'row',style:'gap:12px;align-items:flex-start;margin-top:10px'},
+      h('img',{src:'data:image/webp;base64,'+b64,alt:'Generated wrestler image',style:'width:90px;border-radius:6px'}),
+      h('div',{},h('div',{class:'hint'},'This image will be sent with your application for the CEO to approve.'),
+        h('button',{type:'button',class:'btn alt sm',style:'margin-top:6px',onclick:()=>{ gen.b64=null; genThumb.replaceChildren(); }},'Remove image'))));},()=>F.refreshGen());
   const form=h('form',{onsubmit:async e=>{
     e.preventDefault();
     const miss=missingFields(F);
+    if(isNew){ if(!F.gender.value) miss.push(['gender','Gender',F.gender]); if(!F.look.value.trim()) miss.push(['look','Physical appearance',F.look]); if(!F.gear.value.trim()) miss.push(['gear','Ring gear',F.gear]); }
     if(miss.length){ toast('Please complete: '+miss.map(m=>m[1]).join(', ')+'.',true); miss[0][2].focus(); miss[0][2].scrollIntoView({block:'center'}); return; }
     const ringName=F.ringName.value.trim();
     const moves={}; MOVE_CATS.forEach(([k])=>moves[k]=lines(F['m_'+k].value));
@@ -703,12 +727,17 @@ function pageEditWrestler(id, isNew){
       ringName, nickname:F.nickname.value.trim(), realName:F.realName.value.trim(), age:F.age.value.trim(),
       hometown:F.hometown.value.trim(), height:F.height.value.trim(), weight:F.weight.value.trim(),
       alignment:F.alignment.value, style:F.style.value.trim(), theme:F.theme.value.trim(), bio:F.bio.value.trim(),
+      gender:F.gender.value, appearance:{look:F.look.value.trim(), gear:F.gear.value.trim()},
       moves, finisher:{name:F.finName.value.trim(), desc:F.finDesc.value.trim()},
-      owner: (S.wrestlers[id]&&S.wrestlers[id].owner) || (isNew&&S.isCEO&&id!==S.uid ? null : S.uid),
+      owner: (wOf(id)&&wOf(id).owner) || (isNew&&S.isCEO&&id!==S.uid ? null : S.uid),
       updatedAt:Date.now()
     };
-    const ok=await safe(()=>S.db.doc('wrestlers/'+id).set(data),'Wrestler saved!');
-    if(ok){ S.editing=false; navTo('wrestler-'+id); }
+    const requesting=isNew&&!S.isCEO;
+    const ok=await safe(()=>S.db.doc('wrestlers/'+id).set(data),requesting?'Contract requested! The CEO will review it.':(isNew?'Wrestler created!':'Wrestler saved!'));
+    if(ok){
+      if(gen.b64) await safe(async()=>{ await api('POST','/portrait/'+encodeURIComponent(id),{data:gen.b64}); await reloadPortraits(); },S.isCEO?'Portrait applied.':'Image sent to the CEO with your application.');
+      S.editing=false; navTo('wrestler-'+id);
+    }
   }},
     h('div',{class:'cols'},
       inp('ringName','Ring name *','e.g. Marcus “Iron” Hale'),
@@ -724,6 +753,13 @@ function pageEditWrestler(id, isNew){
       inp('style','Wrestling style *','e.g. Powerhouse, High-flyer, Technician'),
       inp('theme','Entrance theme music *','Song / title')),
     h('div',{class:'f'},h('label',{class:'l'},'Biography *'),F.bio=h('textarea',{style:'min-height:150px',placeholder:'Where did they come from? What drives them? Training, rivalries, gimmick…'},w.bio||'')),
+    h('div',{class:'sect-h',style:'margin-top:28px'},h('h2',{},'Appearance')),
+    h('div',{class:'hint',style:'margin:-6px 0 12px'},'Tell us how your wrestler looks and what they wear to the ring. The announcers use this, and it can be used to make a portrait.'),
+    h('div',{class:'cols'},
+      h('div',{class:'f'},h('label',{class:'l'},'Gender '+(isNew?'*':'')),F.gender=h('select',{onchange:()=>F.refreshGen()},h('option',{value:''},'Choose…'),['Male','Female','Non-binary'].map(g=>h('option',{value:g,selected:w.gender===g},g)))),
+      h('div',{class:'f'},h('label',{class:'l'},'Physical appearance '+(isNew?'*':'')),F.look=h('textarea',{style:'min-height:80px',maxlength:'600',placeholder:'Build, hair, tattoos, scars, face paint, attitude…',oninput:()=>F.refreshGen()},ap.look||'')),
+      h('div',{class:'f'},h('label',{class:'l'},'Ring gear '+(isNew?'*':'')),F.gear=h('textarea',{style:'min-height:80px',maxlength:'600',placeholder:'Trunks or tights, boots, mask, robe, belts, colors…',oninput:()=>F.refreshGen()},ap.gear||''))),
+    genBox(),
     h('div',{class:'sect-h',style:'margin-top:28px'},h('h2',{},'Move Set')),
     h('div',{class:'hint',style:'margin:-6px 0 12px'},'List one move per line, with at least one in every category. Be as comprehensive as you like — the CEO uses this to book your matches.'),
     h('div',{class:'cols'}, MOVE_CATS.map(([k,l])=>h('div',{class:'f'},h('label',{class:'l'},l+' *'),F['m_'+k]=h('textarea',{placeholder:'One move per line'},(mv[k]||[]).join('\n'))))),
@@ -732,13 +768,13 @@ function pageEditWrestler(id, isNew){
       h('div',{class:'f'},h('label',{class:'l'},'Finisher name *'),F.finName=h('input',{type:'text',value:fin.name||'',placeholder:'e.g. The Iron Curtain',maxlength:'120'})),
       h('div',{class:'f'},h('label',{class:'l'},'How it looks *'),F.finDesc=h('textarea',{style:'min-height:60px',placeholder:'Describe the move'},fin.desc||''))),
     h('div',{class:'row',style:'margin-top:10px'},
-      h('button',{class:'btn',type:'submit'},isNew?'Sign Contract':'Save Wrestler'),
-      h('a',{class:'btn alt',href:S.wrestlers[id]?'#wrestler-'+id:'#home',onclick:()=>{S.editing=false;}},'Cancel')));
-  S.editing=true;
+      h('button',{class:'btn',type:'submit'},isNew?'Request Contract':'Save Wrestler'),
+      h('a',{class:'btn alt',href:wOf(id)?'#wrestler-'+id:'#home',onclick:()=>{S.editing=false;}},'Cancel')));
+  S.editing=true; F.refreshGen();
   return h('div',{},h('div',{class:'sect-h'},h('h2',{},isNew?'Create Your Wrestler':'Edit '+(w.ringName||'Wrestler'))),
     h('div',{class:'card'},
-      h('div',{class:'hint',style:'margin-bottom:14px'},'Every field marked * is required to sign your contract.'),
-      (!isNew&&S.wrestlers[id]&&legacyMissing(w).length)?h('div',{class:'notice'},'Your profile was created before every field became required. Please complete: '+legacyMissing(w).join(', ')+'.'):null,
+      h('div',{class:'hint',style:'margin-bottom:14px'},'Every field marked * is required to request your contract. The CEO reviews each request before your wrestler joins the roster.'),
+      (!isNew&&wOf(id)&&legacyMissing(w).length)?h('div',{class:'notice'},'Your profile was created before every field became required. Please complete: '+legacyMissing(w).join(', ')+'.'):null,
       form));
 }
 function legacyMissing(w){
@@ -1076,6 +1112,7 @@ function pageCEO(){
   wrap.append(h('div',{class:'sect'},h('div',{class:'sect-h'},h('h2',{},'Roster Management'),h('div',{class:'sp'}),
     h('a',{class:'btn alt sm',href:'#edit-'+uid8()},'+ Add NPC / Guest Wrestler')),
     ws.length?h('div',{class:'tiles'},ws.map(superTile)):h('div',{class:'empty'},'No wrestlers have signed yet. Share the page with your players!')));
+  wrap.append(applicationInbox());
   wrap.append(portraitInbox());
   wrap.append(subInbox());
   wrap.append(h('div',{class:'hint',style:'margin-top:24px'},'Tip: to make another user a CEO, set is_admin = 1 on their row in the D1 users table (see the README).'));
@@ -1085,7 +1122,8 @@ function pageCEO(){
 /* ----- Superstar Hub: player submissions ----- */
 const SUB_TYPES={promo:'Promo / Interview', backstage:'Backstage Segment', angle:'Angle / Brawl', other:'Other'};
 const MAX_OPEN_SUBS=3;
-function unseenSubs(){ return S.isCEO?(S.subs||[]).filter(x=>!x.seen).length+(S.portraitPending||[]).filter(x=>!x.seen).length:0; }
+function pendingApps(){ return Object.values(S.apps||{}).filter(a=>a.status==='pending'); }
+function unseenSubs(){ return S.isCEO?(S.subs||[]).filter(x=>!x.seen).length+(S.portraitPending||[]).filter(x=>!x.seen).length+pendingApps().length:0; }
 function subStatusTag(x){
   if(x.status==='used') return h('span',{class:'tag navy'},'Used'+(S.events[x.usedEvent]?' in '+(S.events[x.usedEvent].title||'a show'):''));
   if(x.status==='approved') return h('span',{class:'tag navy'},'Approved');
@@ -1098,6 +1136,7 @@ async function loadSubs(){ try{ S.subs=(await api('GET','/submissions')).submiss
 function pageHub(){
   if(!S.user) return h('div',{class:'empty'},'Log in to open your Superstar Hub. ',h('a',{href:'#login',style:'color:var(--red2)'},'Log in'));
   const me=S.wrestlers[S.uid];
+  if(S.apps[S.uid]) return h('div',{class:'empty'},S.apps[S.uid].status==='declined'?'Your contract request was not approved yet. Revise your application and send it again. ':'Your Superstar Hub unlocks once the CEO approves your contract. ',h('a',{href:'#my-wrestler',style:'color:var(--red2)'},'View application'));
   if(!me) return h('div',{class:'empty'},'Create your wrestler first, then your Superstar Hub unlocks. ',h('a',{href:'#my-wrestler',style:'color:var(--red2)'},'Create wrestler'));
   const wrap=h('div',{});
   const listBox=h('div',{}), formBox=h('div',{});
@@ -1215,12 +1254,74 @@ function cropDialog(file,done){
   };
   img.src=url;
 }
+// Shrinks any picture to the portrait size (cover-fit) as WebP, aiming for 150 KB or less. Resolves to base64.
+async function fitPortrait(src){
+  const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error('The picture could not be read.')); i.src=src; });
+  const cv=document.createElement('canvas'); cv.width=PORT_W; cv.height=PORT_H;
+  const sc=Math.max(PORT_W/img.width,PORT_H/img.height), dw=img.width*sc, dh=img.height*sc;
+  cv.getContext('2d').drawImage(img,(PORT_W-dw)/2,(PORT_H-dh)/2,dw,dh);
+  let blob=null;
+  for(const q of [0.86,0.74,0.62,0.5,0.38]){
+    blob=await new Promise(r=>cv.toBlob(r,'image/webp',q));
+    if(!blob||blob.type!=='image/webp') blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',q));
+    if(blob&&blob.size<=PORT_MAX) break;
+  }
+  if(!blob||blob.size>200*1024) throw new Error('The picture is too large to use.');
+  return await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(String(fr.result).split(',')[1]); fr.onerror=rej; fr.readAsDataURL(blob); });
+}
+// Asks the Worker (Gemini) for one image from the appearance details, shows it, and offers only "Use this image" or "Don't use".
+async function generateImage(fields,onUse,onDone){
+  const ov=h('div',{class:'modal-bg'},h('div',{class:'modal'},h('h3',{},'Generating your wrestler…'),h('div',{class:'hint'},'This can take up to a minute. Please keep this page open.')));
+  document.body.append(ov);
+  let b64;
+  try{
+    const r=await api('POST','/portrait-generate',fields);
+    S.portraitGenAt=r.nextAt||0;
+    b64=await fitPortrait('data:'+(r.mime||'image/png')+';base64,'+r.image);
+  }catch(e){
+    ov.remove();
+    if(e&&e.status===429&&e.nextAt) S.portraitGenAt=e.nextAt;
+    toast((e&&e.message)||'Could not make an image.',true);
+    if(onDone) onDone();
+    return;
+  }
+  const close=()=>{ ov.remove(); if(onDone) onDone(); };
+  ov.replaceChildren(h('div',{class:'modal'},
+    h('h3',{},'Your wrestler'),
+    h('div',{class:'crop-wrap'},h('img',{src:'data:image/webp;base64,'+b64,alt:'Generated wrestler',style:'width:240px;border-radius:6px'})),
+    h('div',{class:'hint',style:'margin-top:8px'},'You can only generate one image every 24 hours. Use it, or skip it and add your own portrait later.'),
+    h('div',{class:'row',style:'margin-top:12px;gap:8px'},
+      h('button',{type:'button',class:'btn',onclick:async()=>{ close(); await onUse(b64); }},'Use this image'),
+      h('button',{type:'button',class:'btn alt',onclick:close},'Don’t use'))));
+}
+function applicationInbox(){
+  const list=Object.values(S.apps||{}).filter(a=>a.status==='pending').sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
+  if(!list.length) return h('div',{});
+  const box=h('div',{class:'sect'});
+  box.append(h('div',{class:'sect-h'},h('h2',{},'Wrestler Applications'),h('div',{class:'sp'}),h('span',{class:'tag red'},list.length+' waiting')));
+  list.forEach(a=>{
+    const ap=a.appearance||{}, note=h('input',{type:'text',placeholder:'Note to the player (optional)',style:'width:100%'});
+    const act=(decision,msg)=>async()=>{ if(await safe(()=>api('PUT','/application/'+encodeURIComponent(a.id),{decision,note:note.value}),msg)){ await loadAll(); render(true); renderNav(route()); } };
+    box.append(h('div',{class:'card',style:'margin-bottom:12px'},
+      h('div',{style:'font-weight:700;font-size:18px'},a.ringName,a.nickname?h('span',{class:'hint'},'  “'+a.nickname+'”'):null),
+      h('div',{class:'hint'},[a.alignment,a.style,a.gender,a.hometown,a.height,a.weight?a.weight+' lbs':'',a.age?'age '+a.age:''].filter(Boolean).join(' · ')),
+      ap.look?h('div',{style:'margin-top:8px'},h('b',{},'Appearance: '),ap.look):null,
+      ap.gear?h('div',{style:'margin-top:4px'},h('b',{},'Ring gear: '),ap.gear):null,
+      h('div',{style:'margin-top:8px'},h('a',{href:'#wrestler-'+a.id,style:'color:var(--red2)'},'View the full application'),(S.portraitPending||[]).some(x=>x.id===a.id)?h('span',{class:'hint'},' · an image is attached (approve it under Portrait Submissions)'):null),
+      h('div',{style:'margin-top:8px'},note),
+      h('div',{class:'row',style:'gap:8px;margin-top:8px'},h('button',{type:'button',class:'btn sm',onclick:act('approve','Wrestler approved.')},'Approve'),h('button',{type:'button',class:'btn danger sm',onclick:act('decline','Application declined.')},'Decline'))));
+  });
+  return box;
+}
 function portraitPanel(id){
   const mine=S.user&&id===S.uid, ceo=S.isCEO;
   if(!mine&&!ceo) return null;
   const box=h('div',{class:'wp-private',style:'margin-top:16px'});
   const pm=mine?S.portraitMine:null;
   const hasCur=!!(S.portraitVer&&S.portraitVer[id]);
+  const gw=wOf(id)||{}, ga=gw.appearance||{};
+  const canGen=!!(mine&&ga.look&&ga.gear&&gw.gender&&gw.height&&gw.weight);
+  const waitGen=!ceo&&(S.portraitGenAt||0)>Date.now();
   function pick(){
     const inp=h('input',{type:'file',accept:'image/jpeg,image/png,image/webp',style:'display:none',onchange:e=>{
       const f=e.target.files&&e.target.files[0]; if(!f) return;
@@ -1247,6 +1348,12 @@ function portraitPanel(id){
   box.append(h('div',{class:'hint'},ceo?'As CEO, a portrait you upload is applied immediately.':'The CEO reviews every portrait, and nobody else sees it until it is approved. Artwork, AI pictures or silhouettes work best. Please do not upload photos of real people, so your identity stays private.'),
     h('div',{class:'row',style:'gap:8px;margin-top:8px'},
       h('button',{type:'button',class:'btn sm',onclick:pick},(pm&&pm.pending)?'Replace with a different picture':(hasCur?'Submit a new portrait':'Submit a portrait')),
+      canGen?h('button',{type:'button',class:'btn alt sm',disabled:waitGen,title:waitGen?'Available again after '+new Date(S.portraitGenAt).toLocaleString():'',onclick:()=>{
+        const w=wOf(id), a=w.appearance||{};
+        generateImage({look:a.look,gear:a.gear,gender:w.gender,height:w.height,weight:w.weight},async b64=>{
+          const r={}; if(await safe(async()=>{ Object.assign(r,await api('POST','/portrait/'+encodeURIComponent(id),{data:b64})); },ceo?'Portrait applied.':'Image sent to the CEO for approval.')){ await reloadPortraits(); render(true); }
+        });
+      }},'Generate Wrestler Image'):null,
       ceo&&hasCur?h('button',{type:'button',class:'btn danger sm',onclick:()=>confirmDlg('Remove this portrait?','The wrestler goes back to no portrait (or the built-in one, if there is one).','Remove',async()=>{ if(await safe(()=>api('DELETE','/portrait/'+encodeURIComponent(id)),'Portrait removed.')){ await reloadPortraits(); render(true); } })},'Remove portrait'):null));
   return box;
 }
@@ -1257,7 +1364,7 @@ function portraitInbox(){
   box.append(h('div',{class:'sect-h'},h('h2',{},'Portrait Submissions'),h('div',{class:'sp'}),h('span',{class:'tag red'},list.length+' waiting')));
   const grid=h('div',{class:'port-grid'});
   list.forEach(it=>{
-    const w=S.wrestlers[it.id], pic=h('div',{class:'port-pending big'});
+    const w=wOf(it.id), pic=h('div',{class:'port-pending big'});
     portraitBlobUrl(it.id).then(u=>{ pic.style.backgroundImage='url("'+u+'")'; }).catch(()=>{});
     const note=h('input',{type:'text',placeholder:'Note to the player (optional)',style:'width:100%'});
     const act=(action,msg)=>async()=>{ if(await safe(()=>api('PUT','/portrait/'+encodeURIComponent(it.id),{action,note:note.value}),msg)){ await reloadPortraits(); render(true); renderNav(route()); } };
@@ -1637,8 +1744,8 @@ function render(keep){
     case 'wrestler': el=pageWrestler(r.id); break;
     case 'watch': el=pageWatch(r.id); break;
     case 'event': { const e=S.events[r.id]; el=(e&&(e.published||S.isCEO))?pageEvent(e):pageEvent(null); break; }
-    case 'my-wrestler': el=pageEditWrestler(S.uid, !S.wrestlers[S.uid]); break;
-    case 'edit': el=pageEditWrestler(r.id, !S.wrestlers[r.id]); break;
+    case 'my-wrestler': el=pageEditWrestler(S.uid, !wOf(S.uid)); break;
+    case 'edit': el=pageEditWrestler(r.id, !wOf(r.id)); break;
     case 'login': el=pageLogin(); break;
     case 'register': el=pageRegister(); break;
     case 'forgot': el=pageForgot(); break;
@@ -1673,7 +1780,7 @@ async function api(method, path, body){
   let data = null; try{ data = await res.json(); }catch(_){}
   if (!res.ok){
     const err = new Error((data && data.error) || ('Request failed ('+res.status+')'));
-    err.status = res.status; err.code = data && data.code; throw err;
+    err.status = res.status; err.code = data && data.code; err.nextAt = data && data.nextAt; throw err;
   }
   return data;
 }
@@ -1694,18 +1801,19 @@ function loadPortraits(){
 async function loadAll(){
   const [w,e,c,pics,pinfo] = await Promise.all([api('GET','/wrestlers'), api('GET','/events'), api('GET','/championships'), loadPortraits(), api('GET','/portraits').catch(()=>({}))]);
   const pver=(pinfo&&pinfo.versions)||{};
-  S.portraitVer=pver; S.portraitMine=(pinfo&&pinfo.mine)||null; S.portraitPending=(pinfo&&pinfo.pending)||[];
+  S.portraitVer=pver; S.portraitGenAt=(pinfo&&pinfo.genNextAt)||0; S.portraitMine=(pinfo&&pinfo.mine)||null; S.portraitPending=(pinfo&&pinfo.pending)||[];
   const wm={}, em={};
+  const am={}; (w.applications||[]).forEach(x=>{ am[x.id]=x; });
   w.wrestlers.forEach(x=>{
     wm[x.id]=x;
     const f=!x.image&&pics[String(x.ringName||'').trim().toLowerCase()];
     if(f&&/^[\w.\-]+$/.test(f)) x.image='img/wrestlers/'+f;
     if(pver[x.id]) x.image=window.USCW_CONFIG.API_BASE+'/api/portrait/'+encodeURIComponent(x.id)+'?v='+pver[x.id];   // an approved player portrait wins
   }); e.events.forEach(x=>{em[x.id]=x;});
-  const sig = JSON.stringify([wm,em,c.championships]);
+  const sig = JSON.stringify([wm,em,c.championships,am]);
   const changed = sig!==S.sig;
   if(S.isCEO){ try{ { const sr=await api('GET','/story'); S.story=sr.stories||{}; S.history=sr.history||[]; } }catch(_){} await loadSubs(); } else S.story={};
-  S.sig=sig; S.wrestlers=wm; S.events=em; S.champs=c.championships||[]; S.loadedW=S.loadedE=true; S.failed=false;
+  S.sig=sig; S.apps=am; S.wrestlers=wm; S.events=em; S.champs=c.championships||[]; S.loadedW=S.loadedE=true; S.failed=false;
   return changed;
 }
 async function refresh(){
