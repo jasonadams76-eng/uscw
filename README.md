@@ -168,6 +168,9 @@ that the Worker creates by itself and clears after 3 days.
 - In the show editor, approved pitches appear in a panel: **+ Add to card** turns text into script beats, or an idea into the segment's "What happens" brief for the AI. Saving the show marks the pitch "used".
 - **✨ Polish with AI** (CEO only) appears on approved exact-text pitches, in the inbox (preview, then "Add to card" uses the polished text) and on the segment in the show editor. It keeps the player's content and results, and restyles it for the show. You see the original beside the polished text and choose **Use polished**, **Redraft** or **Keep original**.
 
+## AI model fallbacks
+Each AI call tries a chain of models and retries once (after 2 seconds) on a temporary Google error such as 503. Undercard matches: `GEMINI_MODEL_LITE`, then `GEMINI_MODEL_FALLBACK` (default `gemini-3.1-flash-lite`), then `GEMINI_MODEL_MAIN`. Everything else: `GEMINI_MODEL_MAIN`, then `GEMINI_MODEL_LITE`, then `GEMINI_MODEL_FALLBACK`. All three are optional Worker variables; the editor notes when a backup model wrote the text.
+
 ## Show cast
 The AI writer knows the whole on-air cast: Mike Johnson (play-by-play) and Earl Backwater (color) commentate; Cindy Maxwell (ring announcer) introduces competitors and announces winners; Paul Sandler and Jackie O'Sullivan (interviewers) run promos and backstage segments; Jason Adams (Owner & CEO) appears in ceremonies and authority angles. The list lives in `AI_SYSTEM` in `worker/src/index.js`.
 
