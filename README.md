@@ -198,3 +198,8 @@ Run `node tools/stamp.js` before each commit that changes anything in `docs/` â€
 
 ## Entrance themes in matches
 An entrance theme loops under the announcers (dropping to 40% volume after a few seconds) until the next theme starts, the bell cue plays, or the segment changes. `docs/audio/bell.mp3` is the bell sound.
+
+## Intro rundown, main-event hype and mirrored feuds
+- The show intro gives every match 2 to 3 sentences on why to care (Mike plus Earl). The AI draws only on facts on file; the built-in writer uses feuds, recent results, the title and the stipulation.
+- The main event match (the last match when the card has two or more) opens with one Mike Johnson hype beat before the entrances.
+- Feuds are mirrored: adding, editing or removing a feud on one wrestler does the same on the other. Opening Storylines once also copies any older one-sided feud onto the other wrestler. Changes save instantly (no save button).

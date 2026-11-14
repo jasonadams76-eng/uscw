@@ -241,8 +241,9 @@ function niceDate(iso,dow){
 function storyOf(id){ const s=(S.story&&S.story[id])||{}; return {results:s.results||[],feuds:s.feuds||[],notes:s.notes||[]}; }
 async function saveStory(id, mutate){
   const st=JSON.parse(JSON.stringify(storyOf(id))); mutate(st);
-  await api('PUT','/story/'+id,st);
+  const res=await api('PUT','/story/'+id,st);
   S.story=S.story||{}; S.story[id]=st;
+  if(res&&res.others) Object.entries(res.others).forEach(([k,v])=>{ S.story[k]=v; });   // the same feud is kept on the other wrestler too
 }
 function matchStakes(sg){
   const bits=[], t=(sg.title||'').trim(), st=(sg.stip||'').trim();
@@ -305,6 +306,23 @@ function storyBlurb(wid,d){
   }
   return out;
 }
+// Earl's one or two sentences on why a match matters, from facts on file only (recent results, the title, the stipulation).
+function whyCare(sg,d,main){
+  const cut=d.date||'9999-12-31', out=[];
+  const firsts=sg.sides.map(x=>x[0]).filter(w=>w&&S.wrestlers[w]);
+  firsts.forEach(w=>{
+    const r=storyOf(w).results.filter(x=>!x.date||x.date<=cut).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+    if(r) out.push(resultLine(wname(w),r));
+  });
+  const stakes=matchStakes(sg), title=(sg.title||'').trim(), stip=(sg.stip||'').trim().replace(/\s+match$/i,'');
+  const reason=out.slice(0,2).join(' ');
+  let close;
+  if(title&&/\b(title|championship|belt|titles)\b/i.test(title)) close=pick(['With the '+title+' on the line, nobody can afford one mistake.','When the '+title+' is at stake, every second counts.']);
+  else if(stip) close=pick(['A '+stip+' match has no place to hide, and that is why you do not blink.','Put them in a '+stip+' match and anything can happen.']);
+  else close=pick(['You do not want to miss a second of this one.','Mark my words, this one will be talked about.']);
+  const open=main?pick(['Folks, this is the one everybody came to see.','This is what the whole night has been building toward.']):pick(['Mike, I like this one.','Do not sleep on this match.','Here is why you stay tuned for this one.']);
+  return open+(reason?' '+reason:'')+' '+close;
+}
 // The built-in Show Intro writer: opening logo + music, crowd pan, Mike Johnson's welcome and the card rundown.
 function draftIntro(d){
   const beats=[], say=t=>'Mike Johnson: “'+t+'”';
@@ -343,6 +361,7 @@ function draftIntro(d){
       if(f) fl=' '+(f.reason?'This one is personal: '+trimEnd(f.reason)+'.':wname(flat[a])+' and '+wname(flat[b])+' have a score to settle.');
     }
     beats.push({cue:main?'crowd_pop':'',pause:0,text:say(t+fl)});
+    beats.push({cue:'',pause:0,text:'Earl Backwater: “'+whyCare(sg,d,main)+'”'});
   });
   if(!matches.length) beats.push({cue:'',pause:0,text:say('The card is being kept under wraps tonight, and I can tell you, nobody is ready for what is coming!')});
   const inMatch=new Set(matches.flatMap(s=>s.sides.flat()));
@@ -415,6 +434,7 @@ function aiPayload(d,idx){
     segment:{type:s.type,title:s.title,stip:s.stip,desc:s.desc,length:s.length,sides:s.sides.map(x=>x.filter(w=>S.wrestlers[w]))},
     wrestlers:ids, facts, earlier:aiEarlier(d,idx),
     champions:S.champs.filter(c=>c.holders.some(id=>S.wrestlers[id])).map(c=>c.name+': '+andList(c.holders.filter(id=>S.wrestlers[id]).map(wname)))};
+  if(s.type==='match'){ const ms=d.segments.filter(x=>x.type==='match'&&x.sides.some(y=>y.length)); p.main=ms.length>1&&ms[ms.length-1]===s; }
   if(s.type==='match') p.result={winner:Number.isInteger(s.result&&s.result.winner)?s.result.winner:-1,finish:(s.result&&s.result.finish)||''};
   if(isIntro){
     p.card=introFacts(d);

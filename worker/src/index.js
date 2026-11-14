@@ -434,6 +434,56 @@ function cleanStory(b) {
     })).filter(x => x.text)
   };
 }
+const emptyStory = () => ({ results: [], feuds: [], notes: [] });
+async function loadStory(env, id) {
+  const r = await env.DB.prepare('SELECT data FROM wrestler_story WHERE id = ?').bind(id).first();
+  if (!r) return emptyStory();
+  try { return cleanStory(JSON.parse(r.data)); } catch (_) { return emptyStory(); }
+}
+async function saveStoryRow(env, id, data) {
+  await env.DB.prepare(
+    `INSERT INTO wrestler_story (id, data, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`)
+    .bind(id, JSON.stringify(data), Date.now()).run();
+}
+// A feud is always on both wrestlers: adding, editing or removing it on one page does the same on the other.
+async function mirrorFeuds(env, id, oldFeuds, newFeuds) {
+  const changed = {};
+  const targets = new Set([...oldFeuds, ...newFeuds].map(f => f.with));
+  for (const x of targets) {
+    if (x === id) continue;
+    const w = await env.DB.prepare('SELECT id FROM wrestlers WHERE id = ?').bind(x).first();
+    if (!w) continue;
+    const mine = newFeuds.find(f => f.with === x), was = oldFeuds.find(f => f.with === x);
+    const theirs = await loadStory(env, x);
+    let dirty = false;
+    if (mine) {
+      const t = theirs.feuds.find(y => y.with === id);
+      if (!t) { if (theirs.feuds.length < 20) { theirs.feuds.push({ id: mine.id, with: id, reason: mine.reason }); dirty = true; } }
+      else if ((!was || was.reason !== mine.reason) && t.reason !== mine.reason) { t.reason = mine.reason; dirty = true; }
+    } else if (was) {
+      const n = theirs.feuds.filter(y => y.with !== id);
+      if (n.length !== theirs.feuds.length) { theirs.feuds = n; dirty = true; }
+    }
+    if (dirty) { await saveStoryRow(env, x, theirs); changed[x] = theirs; }
+  }
+  return changed;
+}
+// One-time catch-up: any feud that exists on only one wrestler is copied to the other (never overwriting a reason already there).
+async function backfillFeuds(env, stories) {
+  const { results } = await env.DB.prepare('SELECT id FROM wrestlers').all();
+  const real = new Set(results.map(r => r.id));
+  const dirty = new Set();
+  for (const [a, st] of Object.entries(stories)) {
+    for (const f of st.feuds || []) {
+      if (!real.has(f.with) || f.with === a) continue;
+      const other = stories[f.with] || (stories[f.with] = emptyStory());
+      other.feuds = other.feuds || [];
+      if (!other.feuds.some(y => y.with === a) && other.feuds.length < 20) { other.feuds.push({ id: f.id, with: a, reason: f.reason || '' }); dirty.add(f.with); }
+    }
+  }
+  for (const x of dirty) await saveStoryRow(env, x, cleanStory(stories[x]));
+}
 async function storyRoutes(request, env, id) {
   const user = await getUser(request, env, true);
   if (!user.isAdmin) throw new HttpError(403, 'Storylines are for the CEO only.');
@@ -442,17 +492,17 @@ async function storyRoutes(request, env, id) {
     const { results } = await env.DB.prepare('SELECT id, data FROM wrestler_story').all();
     const stories = {};
     for (const r of results) { try { stories[r.id] = JSON.parse(r.data); } catch (_) { /* skip bad row */ } }
+    try { await backfillFeuds(env, stories); } catch (_) { /* best effort */ }
     return json({ stories });
   }
   if (request.method === 'PUT' && id) {
     const w = await env.DB.prepare('SELECT id FROM wrestlers WHERE id = ?').bind(id).first();
     if (!w) throw new HttpError(404, 'Wrestler not found');
     const data = cleanStory(await readJson(request, 100 * 1024));
-    await env.DB.prepare(
-      `INSERT INTO wrestler_story (id, data, updated_at) VALUES (?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`)
-      .bind(id, JSON.stringify(data), Date.now()).run();
-    return json({ ok: true, id });
+    const before = await loadStory(env, id);
+    await saveStoryRow(env, id, data);
+    const others = await mirrorFeuds(env, id, before.feuds, data.feuds);
+    return json({ ok: true, id, others });
   }
   throw new HttpError(405, 'Method not allowed');
 }
@@ -839,7 +889,7 @@ function aiPrompt(b, profiles, nameOf) {
   if (b.kind === 'intro') {
     const base = b.base.map((x, i) => `${i + 1}. ${x.text}`).join('\n');
     task = `TASK: Write the SHOW INTRO for tonight's broadcast, about ${words} words.
-Order: (1) the show logo and theme music open the show (use the intro_music cue on that first beat); (2) the cameras pan across the crowd in the venue, vivid and specific to this venue; (3) Mike Johnson welcomes the television audience to the venue and says what a show USCW has in store, with Earl chiming in (Cindy Maxwell may add a short, formal welcome of her own); (4) Mike runs down the card, then Earl and Mike bicker briefly about who they like; (5) for each scheduled appearance, a line like "Also scheduled to be here tonight is ..." with a short blurb of that wrestler's current storyline; (6) a punchy closing line that throws to the first match.
+Order: (1) the show logo and theme music open the show (use the intro_music cue on that first beat); (2) the cameras pan across the crowd in the venue, vivid and specific to this venue; (3) Mike Johnson welcomes the television audience to the venue and says what a show USCW has in store, with Earl chiming in (Cindy Maxwell may add a short, formal welcome of her own); (4) Mike runs down the card, and EVERY match on it gets its own 2 to 3 sentences from the two announcers telling the viewer why they should care: Mike introduces the match (who, and what is at stake), and Earl or Mike adds the reason it matters, drawn only from the facts given for it (title on the line, the feud and what it is about, recent wins and losses, the CEO's show notes). Alternate who leads, let Earl and Mike disagree about who has the edge, and give the MAIN EVENT the biggest build-up. Never say who wins and never invent a history that is not given; (5) for each scheduled appearance, a line like "Also scheduled to be here tonight is ..." with a short blurb of that wrestler's current storyline; (6) a punchy closing line that throws to the first match.
 Never reveal who wins any match tonight.
 THE CARD:\n${b.card.matches.map(t => '- ' + t).join('\n') || '- (no matches announced)'}
 SCHEDULED APPEARANCES:\n${b.card.appearances.map(a => `- ${a.name}: ${a.facts.join(' ')}`).join('\n') || '- (none)'}
@@ -857,7 +907,7 @@ THE PLAYER'S TEXT:\n${base}`;
       ? `OUTCOME (fixed, do not change): ${sideNames(seg.sides[res.winner])} ${seg.sides[res.winner].length > 1 ? 'win' : 'wins'}${res.finish ? ` — finish: ${res.finish}` : ` with their finishing move`}.`
       : 'OUTCOME (fixed): the match ends in a draw / no contest.';
     task = `TASK: Write the full MATCH segment, about ${words} words: ${sidesTxt}${stakes ? ` (${stakes})` : ''}.
-Start with each competitor's entrance: put the entrance:<id> cue on the first beat of that wrestler's walk to the ring, then let his theme play under several beats of Cindy Maxwell's ring introduction of him (hometown, and the title on the line if any) and Mike and Earl talking about him as he makes his way down. His theme keeps playing until the next wrestler's entrance or the bell, so give each entrance enough beats to feel like a real walk-out. Then the bell (put the bell cue on the beat where the bell rings), then play-by-play and color commentary from Mike and Earl with a believable back-and-forth, the wrestlers' own moves, and the finish.
+${b.main ? 'THIS IS THE MAIN EVENT OF THE NIGHT. Before anything else, open the segment with ONE beat from Mike Johnson (cue crowd_pop) that hypes the match up as the closing attraction: the stakes, what it means to each competitor and the electricity in the building. Then the entrances begin. Never say who wins.\n' : ''}Start with each competitor's entrance: put the entrance:<id> cue on the first beat of that wrestler's walk to the ring, then let his theme play under several beats of Cindy Maxwell's ring introduction of him (hometown, and the title on the line if any) and Mike and Earl talking about him as he makes his way down. His theme keeps playing until the next wrestler's entrance or the bell, so give each entrance enough beats to feel like a real walk-out. Then the bell (put the bell cue on the beat where the bell rings), then play-by-play and color commentary from Mike and Earl with a believable back-and-forth, the wrestlers' own moves, and the finish.
 ${outcome}
 NEAR-FALLS (required): this match needs ${seg.length >= 10 ? 'six or more' : seg.length >= 6 ? 'four or five' : seg.length >= 4 ? 'two or three' : 'one or two'} failed finishing attempts before the end, pin attempts and submission attempts together, by BOTH wrestlers (or teams), the loser included. Build them up: early kickouts are casual and the later ones get closer, set up by a big move from that wrestler's own move list, and no two covers should be set up the same way. Unless the CEO's notes make it a squash, the eventual loser must get at least one or two close pin attempts of their own.
 Write every PIN ATTEMPT as exactly three beats in a row:
@@ -949,7 +999,7 @@ async function aiDraft(request, env) {
     result: { winner: Number.isInteger(res.winner) && res.winner >= -1 && res.winner < sides.length ? res.winner : -1, finish: aiStr(res.finish, 300) },
     earlier: aiList(raw.earlier, 14, 300), champions: aiList(raw.champions, 6, 200),
     base: (Array.isArray(raw.base) ? raw.base : []).slice(0, 40).map(x => ({ text: aiStr(x && x.text, 1200) })).filter(x => x.text),
-    baseWords: 0,
+    baseWords: 0, main: !!raw.main,
     card: {
       matches: aiList(card.matches, 12, 400),
       appearances: (Array.isArray(card.appearances) ? card.appearances : []).slice(0, 12)
