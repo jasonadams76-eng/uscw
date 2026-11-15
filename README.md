@@ -223,7 +223,7 @@ Each wrestler's Storylines panel has a Superstar Level: Not set, Jobber, Lower C
 - Prompt text: the `IMAGE_PROMPT` constant in `worker/src/index.js`. Model: Worker variable `GEMINI_MODEL_IMAGE` (default `gemini-3.1-flash-image`; confirm the name in AI Studio). Uses the same `GEMINI_API_KEY` secret.
 
 ## Pyro
-`docs/audio/pyro.mp3` is the `pyro` cue (listed in the CEO sound dropdown and allowed for the AI writer). It plays on top of any theme music, which keeps going. Any beat whose text mentions pyro, pyrotechnics or fireworks plays it automatically, so the AI only has to write the mention.
+`docs/audio/pyro.mp3` is the `pyro` cue (listed in the CEO sound dropdown and allowed for the AI writer). It plays on top of any theme music, which keeps going. Any beat whose text mentions pyro, pyrotechnics or fireworks plays it automatically timed so the first blast (0.25 s into the clip) lands exactly as the word finishes appearing, not at the start of the line, and a `pyro` cue put on the line before is moved to the next action line `( … )` that mentions it. A pyro cue on a line that never mentions it still plays at the start of the line. The AI only has to write the mention.
 
 After a count that stops at 2, one to four dots (random each time) appear one at a time after the 2 while the pin hangs, then the kickout line follows.
 
