@@ -235,3 +235,6 @@ After a count that stops at 2, one to four dots (random each time) appear one at
 
 ## Show theme
 The `intro_music` cue plays once through to the end of the file at a steady 40% of the viewer's volume (no fade-down). Plain beats and new segments do not cut it; it stops early only when another theme (an entrance or winner theme) or the bell comes in, which fade it out over 2.5 s and 1.5 s.
+
+## Slam on the mat
+`docs/audio/slam.mp3` is the `mat_slam` cue. It plays once on top of everything else; the AI writer may pick the cue, and there is no automatic word trigger.
