@@ -4,7 +4,10 @@
     "bell": "bell.mp3",
     "pyro": "pyro.mp3",
     "crowd_boo": "boos.mp3",
-    "mat_slam": "slam.mp3"
+    "mat_slam": "slam.mp3",
+    "crowd_pop": "pop-small.mp3",
+    "crowd_pop_big": "pop-big.mp3",
+    "chair_shot": "chair.mp3"
   },
   "entrances": {
     "hardbody harrison": "entrance-hardbody.mp3",

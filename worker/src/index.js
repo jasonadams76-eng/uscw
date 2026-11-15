@@ -850,7 +850,7 @@ async function storyRoutes(request, env, id) {
 /* ---------------- events ---------------- */
 const SEG_TYPES = ['show_intro', 'match', 'promo', 'backstage', 'angle', 'ceremony', 'other'];
 // Sound cues the show script may trigger (the audio files themselves are added later).
-const CUE_RE = /^(intro_music|bell|pyro|crowd_pop|crowd_boo|crowd_chant|mat_slam|pin_count|chair_shot|entrance:[A-Za-z0-9_-]{1,40})$/;
+const CUE_RE = /^(intro_music|bell|pyro|crowd_pop|crowd_pop_big|crowd_boo|crowd_chant|mat_slam|pin_count|chair_shot|entrance:[A-Za-z0-9_-]{1,40})$/;
 const MAX_BEATS = 120, MAX_BEAT_CHARS = 1200, MAX_SCRIPT_CHARS = 150000;
 const cleanLength = (v, type) => {
   const n = Math.round(Number(v));
@@ -1171,7 +1171,7 @@ const GEMINI_MODEL_MAIN = 'gemini-3.8-flash';        // intro, promos, backstage
 const GEMINI_MODEL_LITE = 'gemini-3.5-flash-lite';   // undercard matches (about 500 free requests a day)
 const GEMINI_MODEL_FALLBACK = 'gemini-3.1-flash-lite'; // last resort when the others are busy or out of quota (variable GEMINI_MODEL_FALLBACK)
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
-const AI_CUES = ['intro_music', 'bell', 'pyro', 'crowd_pop', 'crowd_boo', 'crowd_chant', 'mat_slam', 'pin_count', 'chair_shot'];
+const AI_CUES = ['intro_music', 'bell', 'pyro', 'crowd_pop', 'crowd_pop_big', 'crowd_boo', 'crowd_chant', 'mat_slam', 'pin_count', 'chair_shot'];
 const AI_SYSTEM = `You write the live text for USCW (United States Championship Wrestling), a fictional wrestling league's weekly TV show "Monday Night Mayhem" and its premium live events. Viewers read the text a few lines at a time, like a live broadcast.
 
 THE USCW CAST (the only non-wrestler characters; use only these people, never invent other staff, officials or interviewers):
@@ -1195,6 +1195,7 @@ RULES:
 - Whenever a wrestler walks to the ring during a promo, interview or angle, give that arrival its own short parenthesized beat, for example (Paco Rodriguez makes his way to the ring.), with the cue entrance:<wrestlerId> so his theme music plays. Do the same for any wrestler who comes out in the show intro.
 - Optional sound cue per beat, used sparingly and only when it fits: ${AI_CUES.join(', ')}, or entrance:<wrestlerId> for a wrestler's entrance (use only the ids provided). Otherwise use an empty string.
 - The page plays a pyro sound by itself whenever a beat's text mentions pyro or fireworks, on top of any theme music, so you do not need a cue for it. It likewise plays crowd boos by itself whenever a beat's text mentions boos, booing or jeers, so write the mention naturally (for example when a heel is hated) and do not add a crowd_boo cue yourself. Mention pyro or fireworks only for a big moment (a major entrance, a title win, a dramatic reveal), and only if the brief or profile supports it.
+- Crowd pop cues: crowd_pop is a small pop for a good moment (a solid move, a fan favorite's entrance, a good line). crowd_pop_big is a large pop and is rare: only for major moments such as a title win, a huge upset, or a main-event entrance. Use at most one big pop in a segment.
 - pause is whole seconds (0 to 6) to hold after the beat; mostly 0 or 1.
 Return only JSON in the requested shape.`;
 

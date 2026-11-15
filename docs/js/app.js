@@ -32,7 +32,7 @@ const PLE_MONTHS = [
   ['May','Memphis in May'],['June','Summer Spectacular'],['July','Beach Bash'],['August','Clash of the Titans'],
   ['September','Annihilation'],['October','Halloween Horror'],['November','Rumble in the Jungle'],['December','Holiday Havoc']
 ];
-const CUES = [['','No sound'],['intro_music','Show intro music'],['bell','Bell'],['pyro','Pyro'],['crowd_pop','Crowd pop'],['crowd_boo','Crowd boos'],['crowd_chant','Crowd chant'],['mat_slam','Slam on the mat'],['pin_count','Pin count'],['chair_shot','Chair shot'],['entrance','Entrance theme…']];
+const CUES = [['','No sound'],['intro_music','Show intro music'],['bell','Bell'],['pyro','Pyro'],['crowd_pop','Crowd pop (small)'],['crowd_pop_big','Crowd pop (big)'],['crowd_boo','Crowd boos'],['crowd_chant','Crowd chant'],['mat_slam','Slam on the mat'],['pin_count','Pin count'],['chair_shot','Chair shot'],['entrance','Entrance theme…']];
 const LENGTHS = [[1,'Short · 1 min'],[3,'Medium · 3 min'],[6,'Long · 6 min'],[10,'Epic · 10 min']];
 const WORDS_PER_MIN = 200, REVEAL_WPS = 3.3, BREATH = 0.25;   // reveal pace: must match the Worker's timeline
 const defLength = type => type==='match'?6:type==='show_intro'?4:3;

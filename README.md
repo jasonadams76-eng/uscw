@@ -238,3 +238,6 @@ The `intro_music` cue plays once through to the end of the file at a steady 40% 
 
 ## Slam on the mat
 `docs/audio/slam.mp3` is the `mat_slam` cue. It plays once on top of everything else; the AI writer may pick the cue, and there is no automatic word trigger.
+
+## Crowd pops and chair shot
+`docs/audio/pop-small.mp3` is `crowd_pop` ("Crowd pop (small)"), `pop-big.mp3` is the new `crowd_pop_big` ("Crowd pop (big)", for major moments only; the AI writer is told to use it rarely) and `chair.mp3` is `chair_shot`. Each plays once on top of everything else. There is no automatic word trigger for these three; the AI writer or the CEO picks the cue.
