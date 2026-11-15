@@ -241,3 +241,6 @@ The `intro_music` cue plays once through to the end of the file at a steady 40% 
 
 ## Crowd pops and chair shot
 `docs/audio/pop-small.mp3` is `crowd_pop` ("Crowd pop (small)"), `pop-big.mp3` is the new `crowd_pop_big` ("Crowd pop (big)", for major moments only; the AI writer is told to use it rarely) and `chair.mp3` is `chair_shot`. Each plays once on top of everything else. There is no automatic word trigger for these three; the AI writer or the CEO picks the cue.
+
+## Pin count sounds
+`count-1.mp3`, `count-2.mp3` and `count-3.mp3` (`count_1` to `count_3`) were cut from one pinfall recording at the mat slaps, each starting about 60 ms before its slap, so a number's sound lands the moment that number appears on screen (the page plays it in the same instant it adds the number). A kickout plays 1 and 2; a pin plays all three, and the third carries the crowd celebration.
