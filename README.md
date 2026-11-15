@@ -231,7 +231,7 @@ After a count that stops at 2, one to four dots (random each time) appear one at
 `docs/audio/crowd.mp3` (listed as `ambient` in `sounds.json`) loops quietly for the whole show: it starts when the viewer starts or resumes, runs at 25% of their volume (`AMBIENT_LEVEL` in `app.js`), follows the volume slider and the mute button, and fades out over 4 seconds when the show ends. It is its own audio channel, so themes, the bell and pyro play over it without touching it.
 
 ## Crowd boos
-`docs/audio/boos.mp3` is the `crowd_boo` cue. It plays on top of everything else (themes and the ambient crowd keep going), and any beat whose text mentions boos, booing or jeers plays it automatically, just like pyro. The AI writer is told to write the mention and not add the cue itself.
+`docs/audio/boos.mp3` is the `crowd_boo` cue. It plays on top of everything else (themes and the ambient crowd keep going), and any beat whose text mentions boos, booing or jeers plays it automatically. The boos start as the line reaches the word (about 0.2 s early), not at the start of the line, and a `crowd_boo` cue put on the line before is moved to the next action line `( … )` that mentions boos. Pyro still plays at the start of its line. The AI writer is told to write the mention and not add the cue itself.
 
 ## Show theme
 The `intro_music` cue plays once through to the end of the file at a steady 40% of the viewer's volume (no fade-down). Plain beats and new segments do not cut it; it stops early only when another theme (an entrance or winner theme) or the bell comes in, which fade it out over 2.5 s and 1.5 s.

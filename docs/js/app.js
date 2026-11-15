@@ -921,7 +921,6 @@ function sndBeat(cue,keep,newSeg,win,text){
   if(cue) sndPlay(cue,false,(cue||'').startsWith('entrance'),(cue||'').startsWith('entrance')&&!win);
   if(win) sndPlay('entrance:'+win,false,true,false);
   if(cue!=='pyro'&&PYRO_RE.test(text||'')) sndPlay('pyro');
-  if(cue!=='crowd_boo'&&BOO_RE.test(text||'')) sndPlay('crowd_boo');   // a beat that mentions boos or jeers gets the crowd boos
 }
 
 // A pin or rope-break count: a beat that is only the numbers, e.g. "1 2" or "1 2 3". The page times it and plays the crowd count.
@@ -1036,7 +1035,8 @@ function pageWatch(id){
       if(stopped||st.paused||st.busy||st.finished) return;
       const b=st.queue.shift();
       if(b&&b.cue==='bell'&&!/\bbell\b/i.test(b.text||'')){ const n=st.queue.slice(0,2).find(x=>/\bbell\b/i.test(x.text||'')&&!x.cue); if(n){ n.cue='bell'; b.cue=''; } }   // the bell sounds on the beat that says it rings
-      if(b&&isPop(b.cue)&&!ROAR_RE.test(b.text||'')){ const n=st.queue[0]; if(n&&!n.cue&&/^\s*\(/.test(n.text||'')&&ROAR_RE.test(n.text)){ n.cue=b.cue; b.cue=''; } }   // the roar sounds on the line that says the crowd roars
+      if(b&&isPop(b.cue)&&!ROAR_RE.test(b.text||'')){ const n=st.queue[0]; if(n&&!n.cue&&/^\s*\(/.test(n.text||'')&&ROAR_RE.test(n.text)){ n.cue=b.cue; b.cue=''; } }
+      if(b&&b.cue==='crowd_boo'&&!BOO_RE.test(b.text||'')){ const n=st.queue[0]; if(n&&!n.cue&&/^\s*\(/.test(n.text||'')&&BOO_RE.test(n.text)){ n.cue=b.cue; b.cue=''; } }   // the roar sounds on the line that says the crowd roars
       if(!b){ if(st.done&&st.received>=st.total&&st.shown>=st.total) finish(); return; }
       st.busy=true; const was=nearBottom();
       if(b.seg) curType=b.seg.type;
@@ -1046,7 +1046,8 @@ function pageWatch(id){
         // The slam sound waits for the end of its line, timed so the hit lands as the last words appear.
         const slamLate=b.cue==='mat_slam'&&!isCountBeat(b.text)&&(b.text||'').trim().length>0;
         const popM=isPop(b.cue)&&!isCountBeat(b.text)?ROAR_RE.exec(b.text||''):null;
-        sndBeat((slamLate||popM)?'':(b.cue||''),curType!=='match',!!b.seg,b.win||'',b.text||'');
+        const booM=!isCountBeat(b.text)?BOO_RE.exec(b.text||''):null;   // boos and jeers sound as the line reaches the word
+        sndBeat((slamLate||popM||(booM&&b.cue==='crowd_boo'))?'':(b.cue||''),curType!=='match',!!b.seg,b.win||'',b.text||'');
         const was1=nearBottom();
         const p=h('p',{class:'w-beat'+(/^\s*\(/.test(b.text||'')?' w-act':'')}); feed.append(p);
         follow(was1||was);
@@ -1093,6 +1094,7 @@ function pageWatch(id){
         // An even stream of letters. The rest of the text sits invisible so lines don't re-wrap as words grow.
         const sched=revealSchedule(text);
         if(popM) later(()=>sndPlay(b.cue),Math.max(0,sched.times[Math.min(text.length-1,popM.index)]/speed-300));   // starts a beat before the roar word is fully on screen
+        if(booM) later(()=>sndPlay('crowd_boo'),Math.max(0,sched.times[Math.min(text.length-1,booM.index)]/speed-200));
         if(slamLate) later(()=>sndPlay('mat_slam'),Math.max(0,sched.times[text.length-1]/speed-780));   // the hit is 0.78 s into the clip
         const vis=h('span',{}), rest=h('span',{style:'visibility:hidden'},text);
         p.append(vis,rest);
