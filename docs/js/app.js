@@ -1027,7 +1027,7 @@ function pageWatch(id){
       if(upTo>=nums.length&&nums[nums.length-1]===2) p.append(h('span',{class:'d'},' · '.repeat(1+Math.floor(Math.random()*4))));
       return p;
     }
-    function instant(b){ if(b.seg) segHeader(b.seg); if(b.text) feed.append(isCountBeat(b.text)?countEl(b.text.match(/[1-4]/g).map(Number),9):h('p',{class:'w-beat'+(/^\s*\(/.test(b.text)?' w-act':'')},b.text)); shownOne(); }
+    function instant(b){ if(b.seg) segHeader(b.seg); if(b.text) feed.append(isCountBeat(b.text)?(/4/.test(b.text)?h('p',{class:'w-beat w-act'},'The referee counts… '+b.text.match(/[1-4]/g).join(' … ')):countEl(b.text.match(/[1-4]/g).map(Number),9)):h('p',{class:'w-beat'+(/^\s*\(/.test(b.text)?' w-act':'')},b.text)); shownOne(); }
     let curType='';
     function playNext(){
       if(stopped||st.paused||st.busy||st.finished) return;
@@ -1045,6 +1045,15 @@ function pageWatch(id){
         if(isCountBeat(b.text)){
           const nums=b.text.match(/[1-4]/g).map(Number), pin=nums[nums.length-1]===3&&nums.length>=3;
           const rope=nums.includes(4);   // a rope-break count (1 2 3 4) is silent; the crowd count sounds are only for pin attempts
+          if(rope){
+            // A rope-break count is not a pin attempt: plain italic text, no big numbers and no sounds.
+            feed.removeChild(p);
+            const rp=h('p',{class:'w-beat w-act'},'The referee counts…'); feed.append(rp); follow(was1||was);
+            const gap=1000/speed;
+            nums.forEach((n,i)=>later(()=>{ rp.textContent+=(i?' … ':' ')+n; },gap*(i+1)));
+            later(()=>{ shownOne(); later(()=>{ st.busy=false; playNext(); },(b.pause||0)*1000/speed); },gap*nums.length+200/speed);
+            return;
+          }
           feed.removeChild(p); const cp=countEl(nums,0); feed.append(cp);
           const finishCount=()=>{
             // A kickout: after the 2, one to four dots appear one at a time while the pin hangs, then the kickout line follows.
@@ -1059,7 +1068,7 @@ function pageWatch(id){
           const showNum=i=>{
             const wz=nearBottom();
             const n=h('span',{class:'n'},String(nums[i])); cp.append(n); follow(wz||was1);
-            if(!rope) sndCount(nums[i],pin);
+            sndCount(nums[i],pin);
             if(i>=nums.length-1){ finishCount(); return; }
             const gap=1000/speed, dot=gap/6;
             const nd=h('span',{class:'d'}); cp.append(nd);
