@@ -1272,7 +1272,7 @@ THE PLAYER'S TEXT:\n${base}`;
       ? `OUTCOME (fixed, do not change): ${sideNames(seg.sides[res.winner])} ${seg.sides[res.winner].length > 1 ? 'win' : 'wins'}${res.finish ? ` — finish: ${res.finish}` : ` with their finishing move`}.`
       : 'OUTCOME (fixed): the match ends in a draw / no contest.';
     task = `TASK: Write the full MATCH segment, about ${words} words: ${sidesTxt}${stakes ? ` (${stakes})` : ''}.
-${b.main ? 'THIS IS THE MAIN EVENT OF THE NIGHT. Before anything else, open the segment with ONE beat from Mike Johnson (cue crowd_pop) that hypes the match up as the closing attraction: the stakes, what it means to each competitor and the electricity in the building. Then the entrances begin. Never say who wins.\n' : ''}Start with each competitor's entrance: put the entrance:<id> cue on the first beat of that wrestler's walk to the ring, then let his theme play under several beats of Cindy Maxwell's ring introduction of him (hometown, and the title on the line if any) and Mike and Earl talking about him as he makes his way down. His theme keeps playing until the next wrestler's entrance or the bell, so give each entrance enough beats to feel like a real walk-out. Then the bell (put the bell cue on the beat where the bell rings), then play-by-play and color commentary from Mike and Earl with a believable back-and-forth, the wrestlers' own moves, and the finish.
+${b.main ? 'THIS IS THE MAIN EVENT OF THE NIGHT. Before anything else, open the segment with ONE beat from Mike Johnson (cue crowd_pop) that hypes the match up as the closing attraction: the stakes, what it means to each competitor and the electricity in the building. Then the entrances begin. Never say who wins.\n' : ''}Start with each competitor's entrance: put the entrance:<id> cue on the first beat of that wrestler's walk to the ring, then let his theme play under several beats of Cindy Maxwell's ring introduction of him (hometown, and the title on the line if any) and Mike and Earl talking about him as he makes his way down. His theme keeps playing until the next wrestler's entrance or the bell, so give each entrance enough beats to feel like a real walk-out. Then the bell (put the bell cue on the very beat whose text says the bell rings, never on the referee or build-up beat before it), then play-by-play and color commentary from Mike and Earl with a believable back-and-forth, the wrestlers' own moves, and the finish.
 ${outcome}
 NEAR-FALLS (required): this match needs ${seg.length >= 10 ? 'six or more' : seg.length >= 6 ? 'four or five' : seg.length >= 4 ? 'two or three' : 'one or two'} failed finishing attempts before the end, pin attempts and submission attempts together, by BOTH wrestlers (or teams), the loser included. Build them up: early kickouts are casual and the later ones get closer, set up by a big move from that wrestler's own move list, and no two covers should be set up the same way. Unless the CEO's notes make it a squash, the eventual loser must get at least one or two close pin attempts of their own.
 Write every PIN ATTEMPT as exactly three beats in a row:
@@ -1452,6 +1452,13 @@ async function aiDraft(request, env) {
     return { text: aiAction(x.text), pause: Math.min(6, Number(x.pause) || 0), cue: good ? cue : '' };
   }));
   if (!out.length) throw new HttpError(502, 'Gemini’s reply was empty. Please try again.');
+  // The bell must sound on the beat that says it rings, not on the build-up before it.
+  out.forEach((x, i) => {
+    if (x.cue !== 'bell' || /\bbell\b/i.test(x.text)) return;
+    for (let j = i + 1; j <= i + 2 && j < out.length; j++) {
+      if (/\bbell\b/i.test(out[j].text) && !out[j].cue) { out[j].cue = 'bell'; x.cue = ''; break; }
+    }
+  });
   return json({ ok: true, beats: out, model, fellBack });
 }
 // Action beats must be in parentheses. Dialogue (Name: “...”) and pin counts (1 2) are left alone.

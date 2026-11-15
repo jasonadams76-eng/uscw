@@ -250,3 +250,6 @@ A count that includes a 4 (a rope-break count, `1 2 3 4`) is not a pin attempt: 
 The slam clip was boosted by 14 dB (with a limiter) because it was much quieter than the other effects.
 
 The ambient clip is 3 minutes taken from 27:30 of a one-hour stadium crowd recording. Its last 2 seconds are blended into the first 2 so the loop restart is inaudible.
+
+## Bell timing
+The bell sound plays on the beat whose text says the bell rings. If the AI puts the bell cue on the referee/build-up line just before it, the Worker moves it to the next line that mentions the bell, and the live player does the same for scripts that were already saved.

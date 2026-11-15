@@ -1032,6 +1032,7 @@ function pageWatch(id){
     function playNext(){
       if(stopped||st.paused||st.busy||st.finished) return;
       const b=st.queue.shift();
+      if(b&&b.cue==='bell'&&!/\bbell\b/i.test(b.text||'')){ const n=st.queue.slice(0,2).find(x=>/\bbell\b/i.test(x.text||'')&&!x.cue); if(n){ n.cue='bell'; b.cue=''; } }   // the bell sounds on the beat that says it rings
       if(!b){ if(st.done&&st.received>=st.total&&st.shown>=st.total) finish(); return; }
       st.busy=true; const was=nearBottom();
       if(b.seg) curType=b.seg.type;
