@@ -226,3 +226,6 @@ Each wrestler's Storylines panel has a Superstar Level: Not set, Jobber, Lower C
 `docs/audio/pyro.mp3` is the `pyro` cue (listed in the CEO sound dropdown and allowed for the AI writer). It plays on top of any theme music, which keeps going. Any beat whose text mentions pyro, pyrotechnics or fireworks plays it automatically, so the AI only has to write the mention.
 
 After a count that stops at 2, one to four dots (random each time) appear one at a time after the 2 while the pin hangs, then the kickout line follows.
+
+## Ambient crowd
+`docs/audio/crowd.mp3` (listed as `ambient` in `sounds.json`) loops quietly for the whole show: it starts when the viewer starts or resumes, runs at 12% of their volume (`AMBIENT_LEVEL` in `app.js`), follows the volume slider and the mute button, and fades out over 4 seconds when the show ends. It is its own audio channel, so themes, the bell and pyro play over it without touching it.

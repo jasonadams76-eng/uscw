@@ -8,5 +8,6 @@
     "hardbody harrison": "entrance-hardbody.mp3",
     "paco rodriguez": "entrance-paco.mp3"
   },
-  "defaultEntrance": ""
+  "defaultEntrance": "",
+  "ambient": "crowd.mp3"
 }

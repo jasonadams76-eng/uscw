@@ -850,10 +850,27 @@ const SND={man:null,loading:null,music:null,fade:null,shared:null,pref:(()=>{ tr
 function sndSave(){ try{ localStorage.setItem('uscw_snd',JSON.stringify(SND.pref)); }catch(_){} }
 function sndLoad(){
   if(!SND.loading) SND.loading=fetch('audio/sounds.json',{cache:'no-cache'}).then(r=>r.ok?r.json():null).catch(()=>null).then(m=>{
-    m=m&&typeof m==='object'?m:{}; SND.man={cues:m.cues||{},entrances:m.entrances||{},def:m.defaultEntrance||''}; return SND.man; });
+    m=m&&typeof m==='object'?m:{}; SND.man={cues:m.cues||{},entrances:m.entrances||{},def:m.defaultEntrance||'',ambient:/^[\w.\- ]+$/.test(m.ambient||'')?m.ambient:''}; return SND.man; });
   return SND.loading;
 }
-function sndAny(){ const m=SND.man; return !!(m&&(Object.values(m.cues).some(Boolean)||Object.values(m.entrances).some(Boolean)||m.def)); }
+function sndAny(){ const m=SND.man; return !!(m&&(Object.values(m.cues).some(Boolean)||Object.values(m.entrances).some(Boolean)||m.def||m.ambient)); }
+// Ambient crowd: its own looping channel at a low level for the whole show. Themes, cues and the bell play on top of it and never touch it.
+const AMBIENT_LEVEL=0.12;
+function sndAmbVol(){ if(SND.amb){ try{ SND.amb.volume=Math.max(0,Math.min(1,SND.pref.vol*AMBIENT_LEVEL)); }catch(_){} } }
+function sndAmbStart(){
+  try{
+    const m=SND.man; if(!m||!m.ambient||!SND.pref.on||(SND.amb&&!SND.amb.paused)) return;
+    clearInterval(SND.ambFade);
+    const a=new Audio('audio/'+encodeURI(m.ambient)); a.loop=true; SND.amb=a; sndAmbVol();
+    const pr=a.play(); if(pr&&pr.catch) pr.catch(()=>{});
+  }catch(_){}
+}
+function sndAmbStop(ms){
+  const a=SND.amb; if(!a) return; SND.amb=null; clearInterval(SND.ambFade);
+  if(!ms){ try{a.pause();}catch(_){} return; }
+  const v0=a.volume, t0=Date.now();
+  SND.ambFade=setInterval(()=>{ const k=(Date.now()-t0)/ms; if(k>=1){ clearInterval(SND.ambFade); try{a.pause();}catch(_){} } else { try{a.volume=Math.max(0,v0*(1-k));}catch(_){} } },100);
+}
 function sndFile(cue){
   const m=SND.man; if(!m||!cue) return '';
   if(cue==='entrance') return m.def;
@@ -870,7 +887,7 @@ function sndFadeOut(ms,duck){
   const v0=a.volume, t0=Date.now();
   SND.fade=setInterval(()=>{ const k=(Date.now()-t0)/ms; if(k>=1){ clearInterval(SND.fade); try{a.pause();}catch(_){} } else { try{a.volume=Math.max(0,v0*(1-k));}catch(_){} } },100);
 }
-function sndStop(){ clearInterval(SND.fade); if(SND.music){ try{SND.music.pause();}catch(_){} SND.music=null; } }
+function sndStop(){ sndAmbStop(0); clearInterval(SND.fade); if(SND.music){ try{SND.music.pause();}catch(_){} SND.music=null; } }
 // Call from a click so browsers allow sound later.
 function sndUnlock(){ try{ const a=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='); a.play().catch(()=>{}); }catch(_){} }
 // A looping entrance theme plays at a steady 40% of the viewer's volume from the first second, so the announcers can be heard over it.
@@ -970,10 +987,10 @@ function pageWatch(id){
     const fill=h('div',{class:'w-fill'});
     const pauseBtn=h('button',{class:'btn alt sm',type:'button',onclick:()=>{
       st.paused=!st.paused; pauseBtn.textContent=st.paused?'▶ Resume':'❚❚ Pause'; if(!st.paused) playNext(); }},'❚❚ Pause');
-    const muteBtn=h('button',{class:'btn alt sm',type:'button',title:'Sound on/off',style:'display:none',onclick:()=>{ SND.pref.on=!SND.pref.on; sndSave(); if(!SND.pref.on) sndStop(); drawMute(); }});
-    const volIn=h('input',{type:'range',min:'0',max:'100',value:Math.round(SND.pref.vol*100),title:'Volume',style:'width:80px;display:none',oninput:e=>{ SND.pref.vol=Number(e.target.value)/100; sndSave(); if(SND.music){ try{SND.music.volume=Math.min(1,SND.pref.vol*(SND.music._k||1));}catch(_){} } }});
+    const muteBtn=h('button',{class:'btn alt sm',type:'button',title:'Sound on/off',style:'display:none',onclick:()=>{ SND.pref.on=!SND.pref.on; sndSave(); if(!SND.pref.on) sndStop(); else sndAmbStart(); drawMute(); }});
+    const volIn=h('input',{type:'range',min:'0',max:'100',value:Math.round(SND.pref.vol*100),title:'Volume',style:'width:80px;display:none',oninput:e=>{ SND.pref.vol=Number(e.target.value)/100; sndSave(); sndAmbVol(); if(SND.music){ try{SND.music.volume=Math.min(1,SND.pref.vol*(SND.music._k||1));}catch(_){} } }});
     function drawMute(){ muteBtn.textContent=SND.pref.on?'🔊':'🔇'; }
-    drawMute(); sndLoad().then(()=>{ if(sndAny()){ muteBtn.style.display=''; volIn.style.display=''; } });
+    drawMute(); sndLoad().then(()=>{ if(stopped) return; sndAmbStart(); if(sndAny()){ muteBtn.style.display=''; volIn.style.display=''; } });
     wrap.append(h('div',{class:'w-bar'},pauseBtn,h('div',{class:'w-prog'},fill),muteBtn,volIn,h('a',{href:'#event-'+id,class:'cond',style:'color:var(--on-navy)'},'Leave')),feed);
     const st={queue:[],received:0,shown:0,total:0,done:false,paused:false,busy:false,finished:false};
     const reduceMotion=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1069,7 +1086,7 @@ function pageWatch(id){
       if(hold>0) later(runBeat,hold); else runBeat();
     }
     function finish(){
-      st.finished=true; clearView();
+      st.finished=true; clearView(); sndAmbStop(4000);
       feed.append(h('div',{class:'w-end'},h('h2',{},'That’s the show!'),
         h('div',{class:'row c'},h('a',{class:'btn',href:'#event-'+id},'Back to the card'),h('button',{class:'btn alt',onclick:()=>startScreen()},'Watch again'))));
       follow(true); pauseBtn.style.display='none';
