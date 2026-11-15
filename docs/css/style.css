@@ -324,3 +324,24 @@ nav a.on .badge{box-shadow:0 0 0 2px var(--navy)}
 .seg.seg-collapsed>.seg-head{margin-bottom:0!important}
 .seg.seg-collapsed .seg-sum{display:block}
 .seg.seg-collapsed .seg-type,.seg.seg-collapsed .seg-sp{display:none}
+
+/* live-show match header: centered, whole portraits */
+.w-seg.w-match{text-align:center;border-left:0;border-top:6px solid var(--red);padding:18px 16px 16px}
+.mh.mh-full{justify-content:center;gap:18px;margin:4px 0 14px}
+.mh-full .mh-side{justify-content:center;flex-wrap:wrap;gap:12px}
+.tile.mini.full{width:200px;aspect-ratio:480/847}
+.tile.mini.full .tile-bg{background-position:center}
+.mini.full .tile-bg::after{font-size:140px;right:-14px;top:-20px}
+.mini.full .tile-txt{padding:10px 10px 12px}
+.mini.full .tile-name{font-size:26px}
+.mini.full .tile-champ{font-size:12px;top:8px;left:8px;padding:2px 8px}
+.mh-full .mh-vs{font-size:40px}
+.w-seg.w-match .w-title{text-align:center}
+/* three or four sides share one row on a wide screen */
+.mh-n3 .tile.mini.full{width:150px}.mh-n3 .mini.full .tile-name{font-size:19px}
+.mh-n4 .tile.mini.full{width:92px}.mh-n4 .mini.full .tile-name{font-size:12px}.mh-n4 .mh-vs{font-size:30px}.mh-n4.mh-full{gap:10px}
+@media(max-width:600px){.tile.mini.full,.mh-n3 .tile.mini.full,.mh-n4 .tile.mini.full{width:112px}.mini.full .tile-name,.mh-n3 .mini.full .tile-name,.mh-n4 .mini.full .tile-name{font-size:15px}.mh.mh-full{gap:8px}.mh-full .mh-side{gap:8px}.mh-full .mh-vs{font-size:26px}
+  .mh-n3.mh-full,.mh-n4.mh-full{flex-direction:column}.mh-n3 .tile.mini.full,.mh-n4 .tile.mini.full{width:140px}}
+/* the Mayhem logo is 800 px wide, so it can run larger than the premium live event logos (about 388 px) */
+.banner-logo.mayhem-logo{width:min(480px,100%);aspect-ratio:800/437}
+.intro-logo.mayhem-logo{width:min(480px,90%)}

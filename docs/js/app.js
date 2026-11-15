@@ -172,30 +172,30 @@ function superTile(w){
 }
 
 // A small wrestler card, used as the header over each match.
-function miniCard(id){
+function miniCard(id,full){
   const w=S.wrestlers[id];
-  if(!w) return h('div',{class:'tile mini Tweener unknown'},h('div',{class:'tile-bg'}),h('div',{class:'tile-txt'},h('div',{class:'tile-name'},'TBA')));
+  if(!w) return h('div',{class:'tile mini Tweener unknown'+(full?' full':'')},h('div',{class:'tile-bg'}),h('div',{class:'tile-txt'},h('div',{class:'tile-name'},'TBA')));
   const bg=h('div',{class:'tile-bg'});
   if(w.image) bg.style.backgroundImage='url("'+String(w.image).replace(/"/g,'%22')+'")';
-  return h('a',{href:'#wrestler-'+id,class:'tile mini '+(w.alignment||'Tweener'),title:w.ringName},
+  return h('a',{href:'#wrestler-'+id,class:'tile mini '+(w.alignment||'Tweener')+(full?' full':''),title:w.ringName},
     bg,
     champsOf(id).length?h('span',{class:'tile-champ'},'★ Champ'):null,
     h('div',{class:'tile-txt'},h('div',{class:'tile-name'},w.ringName)));
 }
 // anim = {k} plays the live-show entrance (cards slam in one by one, then VS); k scales the timing (1 = normal speed).
 const CARD_GAP=0.33;
-function matchHeader(sides,anim){
+function matchHeader(sides,anim,full){   // full = the live-show header: centered, with each wrestler's whole portrait
   const real=(sides||[]).filter(x=>x&&x.length);
   if(!real.length) return null;
   const out=[]; let n=0;
   const k=anim?anim.k:1;
   real.forEach((side,i)=>{
-    const cards=side.map(miniCard);
+    const cards=side.map(id=>miniCard(id,full));
     if(anim) cards.forEach(c=>{ c.style.animationDelay=(n++*CARD_GAP*k).toFixed(2)+'s'; });
     if(i>0){ const vs=h('div',{class:'mh-vs'},'VS'); if(anim) vs.style.animationDelay=(((n-side.length)*CARD_GAP+0.1)*k).toFixed(2)+'s'; out.push(vs); }
     out.push(h('div',{class:'mh-side'+(anim?' from-'+(i===0?'l':i===1?'r':'b'):'')},cards));
   });
-  const el=h('div',{class:'mh'+(anim?' anim':'')},out);
+  const el=h('div',{class:'mh'+(anim?' anim':'')+(full?' mh-full mh-n'+Math.min(real.length,4):'')},out);
   if(anim){ el.style.setProperty('--k',k); el._cards=n; }
   return el;
 }
@@ -1026,9 +1026,9 @@ function pageWatch(id){
       if(sg.type!=='match') return 0;   // only matches get a segment header; promos, backstage scenes and the rest just start talking
       const sides=(sg.sides||[]).filter(x=>x.length);
       const k=1/speed, play=!!animate&&!reduceMotion&&sg.type==='match'&&sides.length>0;
-      const mh=sg.type==='match'?matchHeader(sg.sides,play?{k}:null):null;
+      const mh=sg.type==='match'?matchHeader(sg.sides,play?{k}:null,true):null;
       const late=(el)=>{ if(play&&el){ el.classList.add('w-late'); el.style.animationDelay=((mh._cards*CARD_GAP+0.45)*k).toFixed(2)+'s'; el.style.setProperty('--k',k); } return el; };
-      feed.append(h('div',{class:'w-seg'},
+      feed.append(h('div',{class:'w-seg w-match'},
         mh,
         late(h('span',{class:'tag '+(sg.type==='match'?'red':'navy')},SEG_TYPES[sg.type]||'Segment')),
         late(sg.title?h('div',{class:'cond w-title'},sg.title):null),
