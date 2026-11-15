@@ -1003,6 +1003,7 @@ function pageWatch(id){
     function countEl(nums,upTo){
       const p=h('p',{class:'w-beat w-count'});
       nums.slice(0,upTo).forEach((n,i)=>{ if(i) p.append(h('span',{class:'d'},' · · · · · ')); p.append(h('span',{class:'n'},String(n))); });
+      if(upTo>=nums.length&&nums[nums.length-1]===2) p.append(h('span',{class:'d'},' · '.repeat(1+Math.floor(Math.random()*4))));
       return p;
     }
     function instant(b){ if(b.seg) segHeader(b.seg); if(b.text) feed.append(isCountBeat(b.text)?countEl(b.text.match(/[1-4]/g).map(Number),9):h('p',{class:'w-beat'+(/^\s*\(/.test(b.text)?' w-act':'')},b.text)); shownOne(); }
@@ -1024,9 +1025,14 @@ function pageWatch(id){
           const nums=b.text.match(/[1-4]/g).map(Number), pin=nums[nums.length-1]===3&&nums.length>=3;
           feed.removeChild(p); const cp=countEl(nums,0); feed.append(cp);
           const finishCount=()=>{
-            // A kickout: the 2 hangs for a random 0.1 to 0.9 seconds before the kickout line appears.
-            const extra=nums[nums.length-1]===2?(100+Math.random()*800)/speed:0;
-            later(()=>{ shownOne(); later(()=>{ st.busy=false; playNext(); },(b.pause||0)*1000/speed); },extra);
+            // A kickout: after the 2, one to four dots appear one at a time while the pin hangs, then the kickout line follows.
+            let wait=0;
+            if(nums[nums.length-1]===2){
+              const dots=1+Math.floor(Math.random()*4), step=260/speed, kd=h('span',{class:'d'}); cp.append(kd);
+              for(let k=1;k<=dots;k++) later(()=>{ kd.textContent+=' · '; },step*k);
+              wait=step*dots+120/speed;
+            }
+            later(()=>{ shownOne(); later(()=>{ st.busy=false; playNext(); },(b.pause||0)*1000/speed); },wait);
           };
           const showNum=i=>{
             const wz=nearBottom();

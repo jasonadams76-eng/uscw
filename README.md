@@ -224,3 +224,5 @@ Each wrestler's Storylines panel has a Superstar Level: Not set, Jobber, Lower C
 
 ## Pyro
 `docs/audio/pyro.mp3` is the `pyro` cue (listed in the CEO sound dropdown and allowed for the AI writer). It plays on top of any theme music, which keeps going. Any beat whose text mentions pyro, pyrotechnics or fireworks plays it automatically, so the AI only has to write the mention.
+
+After a count that stops at 2, one to four dots (random each time) appear one at a time after the 2 while the pin hangs, then the kickout line follows.
