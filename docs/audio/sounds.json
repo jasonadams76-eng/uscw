@@ -14,7 +14,8 @@
   },
   "entrances": {
     "hardbody harrison": "entrance-hardbody.mp3",
-    "paco rodriguez": "entrance-paco.mp3"
+    "paco rodriguez": "entrance-paco.mp3",
+    "sweardog mckraken": "entrance-sweardog.mp3"
   },
   "defaultEntrance": "",
   "ambient": "crowd.mp3"
