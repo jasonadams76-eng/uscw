@@ -246,3 +246,5 @@ The `intro_music` cue plays once through to the end of the file at a steady 40% 
 `count-1.mp3`, `count-2.mp3` and `count-3.mp3` (`count_1` to `count_3`) were cut from one pinfall recording at the mat slaps, each starting about 60 ms before its slap, so a number's sound lands the moment that number appears on screen (the page plays it in the same instant it adds the number). A kickout plays 1 and 2; a pin plays all three, and the third carries the crowd celebration.
 
 A count that includes a 4 (a rope-break count, `1 2 3 4`) is not a pin attempt: it shows as a plain italic line ("The referee counts… 1 … 2 … 3 … 4"), one number per second, with no big numbers, no dots and no count sounds. Only 1 2 and 1 2 3 counts get the big-number display and the crowd sounds.
+
+The slam clip was boosted by 14 dB (with a limiter) because it was much quieter than the other effects.
