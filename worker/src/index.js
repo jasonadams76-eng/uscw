@@ -20,7 +20,7 @@ const BAD_LOGIN = 'Incorrect email or password';
 const DUMMY_SALT = '00112233445566778899aabbccddeeff'; // keeps timing similar for unknown emails
 
 class HttpError extends Error {
-  constructor(status, message, code) { super(message); this.status = status; this.code = code; }
+  constructor(status, message, code, nextAt) { super(message); this.status = status; this.code = code; this.nextAt = nextAt; }
 }
 
 /* ---------------- crypto helpers ---------------- */
@@ -566,8 +566,7 @@ async function portraitGenerate(request, env) {
     // Claim the slot atomically so two quick clicks cannot both go through.
     const claim = await env.DB.prepare('UPDATE portrait_gen SET last_at = ? WHERE user_id = ? AND last_at <= ?').bind(now, user.id, now - IMAGE_COOLDOWN_MS).run();
     if (!(claim.meta && claim.meta.changes > 0)) {
-      const e = new HttpError(429, 'You can generate one image every 24 hours.');
-      e.nextAt = prev + IMAGE_COOLDOWN_MS; throw e;
+      throw new HttpError(429, 'You can generate one image every 24 hours.', undefined, prev + IMAGE_COOLDOWN_MS);
     }
   }
   const refund = () => user.isAdmin ? null : env.DB.prepare('UPDATE portrait_gen SET last_at = ? WHERE user_id = ?').bind(prev, user.id).run();
