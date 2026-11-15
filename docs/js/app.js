@@ -1039,7 +1039,9 @@ function pageWatch(id){
       const hold=b.seg?segHeader(b.seg,true):0;
       if(hold>0) follow(was);
       const runBeat=()=>{
-        sndBeat(b.cue||'',curType!=='match',!!b.seg,b.win||'',b.text||'');
+        // The slam sound waits for the end of its line, timed so the hit lands as the last words appear.
+        const slamLate=b.cue==='mat_slam'&&!isCountBeat(b.text)&&(b.text||'').trim().length>0;
+        sndBeat(slamLate?'':(b.cue||''),curType!=='match',!!b.seg,b.win||'',b.text||'');
         const was1=nearBottom();
         const p=h('p',{class:'w-beat'+(/^\s*\(/.test(b.text||'')?' w-act':'')}); feed.append(p);
         follow(was1||was);
@@ -1085,6 +1087,7 @@ function pageWatch(id){
         if(!text.trim()){ finishBeat(); return; }
         // An even stream of letters. The rest of the text sits invisible so lines don't re-wrap as words grow.
         const sched=revealSchedule(text);
+        if(slamLate) later(()=>sndPlay('mat_slam'),Math.max(0,sched.times[text.length-1]/speed-780));   // the hit is 0.78 s into the clip
         const vis=h('span',{}), rest=h('span',{style:'visibility:hidden'},text);
         p.append(vis,rest);
         const t0=performance.now(); let shown=0;

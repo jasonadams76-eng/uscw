@@ -237,7 +237,7 @@ After a count that stops at 2, one to four dots (random each time) appear one at
 The `intro_music` cue plays once through to the end of the file at a steady 40% of the viewer's volume (no fade-down). Plain beats and new segments do not cut it; it stops early only when another theme (an entrance or winner theme) or the bell comes in, which fade it out over 2.5 s and 1.5 s.
 
 ## Slam on the mat
-`docs/audio/slam.mp3` is the `mat_slam` cue. It plays once on top of everything else; the AI writer may pick the cue, and there is no automatic word trigger.
+`docs/audio/slam.mp3` is the `mat_slam` cue. It plays once on top of everything else; the AI writer may pick the cue, and there is no automatic word trigger. The sound is held until the end of its line and started 0.78 s before the last words appear, so the hit in the clip lands as the line finishes (a slam cue on an empty beat plays at once).
 
 ## Crowd pops and chair shot
 `docs/audio/pop-small.mp3` is `crowd_pop` ("Crowd pop (small)"), `pop-big.mp3` is the new `crowd_pop_big` ("Crowd pop (big)", for major moments only; the AI writer is told to use it rarely) and `chair.mp3` is `chair_shot`. Each plays once on top of everything else. There is no automatic word trigger for these three; the AI writer or the CEO picks the cue.
