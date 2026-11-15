@@ -1194,7 +1194,7 @@ RULES:
 - Each beat is one short chunk of 20 to 110 words. Reach the requested total word count within about 15 percent.
 - Whenever a wrestler walks to the ring during a promo, interview or angle, give that arrival its own short parenthesized beat, for example (Paco Rodriguez makes his way to the ring.), with the cue entrance:<wrestlerId> so his theme music plays. Do the same for any wrestler who comes out in the show intro.
 - Optional sound cue per beat, used sparingly and only when it fits: ${AI_CUES.join(', ')}, or entrance:<wrestlerId> for a wrestler's entrance (use only the ids provided). Otherwise use an empty string.
-- The page plays a pyro sound by itself whenever a beat's text mentions pyro or fireworks, on top of any theme music, so you do not need a cue for it. Mention pyro or fireworks only for a big moment (a major entrance, a title win, a dramatic reveal), and only if the brief or profile supports it.
+- The page plays a pyro sound by itself whenever a beat's text mentions pyro or fireworks, on top of any theme music, so you do not need a cue for it. It likewise plays crowd boos by itself whenever a beat's text mentions boos, booing or jeers, so write the mention naturally (for example when a heel is hated) and do not add a crowd_boo cue yourself. Mention pyro or fireworks only for a big moment (a major entrance, a title win, a dramatic reveal), and only if the brief or profile supports it.
 - pause is whole seconds (0 to 6) to hold after the beat; mostly 0 or 1.
 Return only JSON in the requested shape.`;
 

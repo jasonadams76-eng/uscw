@@ -908,6 +908,7 @@ function sndPlay(cue,force,keep,loop){
 // A theme marked keep (a winner's theme, or an entrance in a promo) plays through plain beats; new music or a new segment fades it.
 // Any beat that mentions pyro or fireworks gets the pyro sound on top of whatever else is playing (the theme keeps going).
 const PYRO_RE=/\b(pyro|pyrotechnics?|fireworks?)\b/i;
+const BOO_RE=/\b(boo|boos|booed|booing|jeer|jeers|jeered|jeering)\b/i;
 function sndBeat(cue,keep,newSeg,win,text){
   const music=!!win||sndIsMusic(cue||'');
   // An entrance theme keeps looping until the next music starts, the bell rings or the segment changes.
@@ -915,6 +916,7 @@ function sndBeat(cue,keep,newSeg,win,text){
   if(cue) sndPlay(cue,false,(cue||'').startsWith('entrance'),(cue||'').startsWith('entrance')&&!win);
   if(win) sndPlay('entrance:'+win,false,true,false);
   if(cue!=='pyro'&&PYRO_RE.test(text||'')) sndPlay('pyro');
+  if(cue!=='crowd_boo'&&BOO_RE.test(text||'')) sndPlay('crowd_boo');   // a beat that mentions boos or jeers gets the crowd boos
 }
 
 // A pin or rope-break count: a beat that is only the numbers, e.g. "1 2" or "1 2 3". The page times it and plays the crowd count.
