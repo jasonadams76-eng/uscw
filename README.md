@@ -259,3 +259,6 @@ When a match has no title/billing in its details, the AI prompt says so explicit
 
 ## Crowd pop timing
 A `crowd_pop` / `crowd_pop_big` cue on a beat whose text talks about the crowd roaring (roar, erupts, cheers, ovation, goes wild and similar) starts as the line reaches that word, about 0.3 s before it is fully on screen, instead of at the start of the line. If the AI put the cue on the line before and the next line is an action line `( … )` that mentions the roar, the player moves the cue to that action line. Pops on lines that never mention a roar still play at the start of the line, as before.
+
+## Collapsible segments in the event builder
+Every segment on the Show Card (CEO Office → edit event) has a ▾/▸ button. Collapsed, a segment shrinks to one headline row: its number, type, title and wrestlers (for a match "Alpha vs. Bravo"), the result if one is set, and the script beat count. The ↑ ↓ and Remove buttons stay on that row. Collapse all / Expand all sit above the list. Collapsing only hides the card, so nothing changes or is lost and the event saves as normal; collapsed state is not saved, so the page always opens expanded, and moving, adding or removing segments keeps the others as they were.

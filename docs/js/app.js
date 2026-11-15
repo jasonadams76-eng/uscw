@@ -1501,6 +1501,7 @@ function pageEditEvent(id){
   d.segments=(d.segments||[]).map(s=>({id:s.id||uid8(), type:s.type||'match', title:s.title||'', stip:s.stip||'', desc:s.desc||'', sides:(s.sides&&s.sides.length)?s.sides:[[],[]], length:Number(s.length)>=1?Number(s.length):defLength(s.type||'match'), beats:(s.beats||[]).map(b=>({text:b.text||'',pause:b.pause||0,cue:b.cue||''})), result:{winner:(s.result&&Number.isInteger(s.result.winner))?s.result.winner:null,finish:(s.result&&s.result.finish)||''}, sub:s.sub||''}));
   S.draft=d; S.editing=true;
   const segBox=h('div',{});
+  const collapsed=new WeakSet();   // segments folded down to a headline (view only; never saved)
   const subsBox=h('div',{});
   const titleField=field('title','Show title');
   function field(k,label,type,ph){ return h('div',{class:'f'},h('label',{class:'l'},label),h('input',{type:type||'text',value:d[k]||'',placeholder:ph||'',oninput:e=>{d[k]=e.target.value;}})); }
@@ -1520,6 +1521,18 @@ function pageEditEvent(id){
         h('div',{class:'seg-h'},h('b',{},wname(x.wrestlerId)),h('span',{class:'tag navy'},SUB_TYPES[x.type]||'Segment'),h('span',{class:'tag'},x.mode==='text'?'Actual text':'Idea'),x.title?h('span',{class:'cond'},x.title):null),
         h('div',{class:'bio',style:'color:var(--text)'},x.body.length>400?x.body.slice(0,400)+'…':x.body),
         h('div',{class:'row',style:'margin-top:8px'},h('button',{class:'btn sm',type:'button',onclick:()=>{ d.segments.push(segFromSub(x)); drawSegs(); toast('Added to the card.'); }},'+ Add to card')))));
+  }
+  function segSummary(s){
+    const names=side=>andList((side||[]).map(wname));
+    const label=SEG_TYPES[s.type]||'Segment';
+    const people=s.type==='match'?s.sides.filter(x=>x.length).map(names).join(' vs. '):andList((s.sides||[]).flat().map(wname));
+    let t=[s.title&&s.title.trim(),people].filter(Boolean).join(s.type==='match'?': ':' — ');
+    if(!t) t=s.type==='show_intro'?'':'(not filled in yet)';
+    let x=label+(t?' · '+t:'');
+    if(s.type==='match'&&s.result&&Number.isInteger(s.result.winner)&&s.result.winner>=0&&s.sides[s.result.winner]) x+='  →  '+names(s.sides[s.result.winner])+' win';
+    else if(s.type==='match'&&s.result&&s.result.winner===-1) x+='  →  draw';
+    if(Array.isArray(s.beats)&&s.beats.length) x+='  ·  script ('+s.beats.length+' beats)';
+    return x;
   }
   function segEditor(s,i){
     const isMatch=s.type==='match';
@@ -1556,12 +1569,20 @@ function pageEditEvent(id){
     const isIntro=s.type==='show_intro';
     const typeSel=h('select',{disabled:isIntro,onchange:e=>{ s.type=e.target.value; if(s.type!=='match') s.sides=[s.sides.flat()]; else if(s.sides.length<2) s.sides.push([]); drawSegs(); }},
       Object.entries(SEG_TYPES).filter(([k])=>k!=='show_intro'||isIntro).map(([k,l])=>h('option',{value:k,selected:s.type===k},l)));
-    const el=h('div',{class:'seg '+s.type},
-      h('div',{class:'row',style:'margin-bottom:10px'},
+    const sumEl=h('div',{class:'seg-sum'},segSummary(s));
+    const togBtn=h('button',{type:'button',class:'btn alt sm seg-tog',title:'Collapse or expand this segment','aria-expanded':collapsed.has(s)?'false':'true',onclick:()=>{
+      if(collapsed.has(s)) collapsed.delete(s); else collapsed.add(s);
+      const c=collapsed.has(s); el.classList.toggle('seg-collapsed',c); togBtn.textContent=c?'▸':'▾'; togBtn.setAttribute('aria-expanded',c?'false':'true');
+      if(c) sumEl.textContent=segSummary(s);
+    }},collapsed.has(s)?'▸':'▾');
+    const el=h('div',{class:'seg '+s.type+(collapsed.has(s)?' seg-collapsed':'')},
+      h('div',{class:'row seg-head',style:'margin-bottom:10px'},
+        togBtn,
         h('span',{class:'cond',style:'font-weight:700;color:var(--muted)'},'#'+(i+1)),
-        h('div',{style:'width:230px'},typeSel),
-        isMatch?null:h('span',{class:'tag draft'},'Hidden from public'),
-        h('div',{style:'flex:1'}),
+        sumEl,
+        h('div',{class:'seg-type',style:'width:230px'},typeSel),
+        isMatch?null:h('span',{class:'tag draft seg-type'},'Hidden from public'),
+        h('div',{class:'seg-sp',style:'flex:1'}),
         h('button',{type:'button',class:'btn alt sm',disabled:i===0||isIntro||d.segments[i-1].type==='show_intro',onclick:()=>{[d.segments[i-1],d.segments[i]]=[d.segments[i],d.segments[i-1]];drawSegs();}},'↑'),
         h('button',{type:'button',class:'btn alt sm',disabled:isIntro||i===d.segments.length-1,onclick:()=>{[d.segments[i+1],d.segments[i]]=[d.segments[i],d.segments[i+1]];drawSegs();}},'↓'),
         h('button',{type:'button',class:'btn danger sm',onclick:()=>{d.segments.splice(i,1);drawSegs();}},'Remove')),
@@ -1692,6 +1713,9 @@ function pageEditEvent(id){
     h('div',{class:'row',style:'margin-bottom:12px'},
       h('button',{class:'btn',type:'button',onclick:()=>wholeCardDialog(d,drawSegs)},'✨ Draft whole card with AI'),
       h('span',{class:'hint'},'Writes every segment you tick, in order, so you mostly just review and edit.')),
+    h('div',{class:'row',style:'margin-bottom:8px'},
+      h('button',{class:'btn alt sm',type:'button',onclick:()=>{ d.segments.forEach(x=>collapsed.add(x)); drawSegs(); }},'Collapse all'),
+      h('button',{class:'btn alt sm',type:'button',onclick:()=>{ d.segments.forEach(x=>collapsed.delete(x)); drawSegs(); }},'Expand all')),
     segBox, addBtns, subsBox,
     h('div',{class:'row'},
       h('button',{class:'btn',type:'button',onclick:()=>save(true)},d.published?'Save & Keep Published':'Save & Publish'),
