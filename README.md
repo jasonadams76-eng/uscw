@@ -262,3 +262,6 @@ A `crowd_pop` / `crowd_pop_big` cue on a beat whose text talks about the crowd r
 
 ## Collapsible segments in the event builder
 Every segment on the Show Card (CEO Office → edit event) has a ▾/▸ button. Collapsed, a segment shrinks to one headline row: its number, type, title and wrestlers (for a match "Alpha vs. Bravo"), the result if one is set, and the script beat count. The ↑ ↓ and Remove buttons stay on that row. Collapse all / Expand all sit above the list. Collapsing only hides the card, so nothing changes or is lost and the event saves as normal; collapsed state is not saved, so the page always opens expanded, and moving, adding or removing segments keeps the others as they were.
+
+## No commercial breaks
+The show has no commercial breaks, so the AI is told never to write "welcome back", "we're back" or "after the break" at the start of a segment; the announcers just carry on and go straight into the next segment. This is a Worker prompt change, so it applies to scripts generated after the Worker is redeployed. Scripts already written keep their text.

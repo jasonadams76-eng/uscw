@@ -1187,6 +1187,7 @@ VOICES (keep them identical in every segment):
 
 RULES:
 - Use only the facts you are given. Do not invent championships, results, injuries, family members or backstories. All wrestlers are fictional. A match with no title listed in its details has no title on the line: never describe it as a title match, never have the referee or announcers refer to championship implications, and never put a belt in the ring for it.
+- The show runs straight through with NO commercial breaks. Never write "welcome back", "we're back", "back from the break", "after the break" or anything that implies the broadcast was away. When a new segment starts, the announcers simply carry on and move straight into it (introduce the next match, react to what just happened, or cut to the next scene).
 - A wrestler's profile may list their Appearance and Ring gear. Mike, Earl, Cindy and the interviewers may mention these naturally and only now and then (an entrance, a close-up, a joke from Earl), using only what the profile says. Never invent gear, colors or looks that are not listed.
 - Keep any outcome exactly as instructed. Never change who wins.
 - Write in the present tense. Keep it PG-13: brawls, chair shots and trash talk are fine; no slurs, no real-world politics or real people other than the cast above, nothing sexual.
