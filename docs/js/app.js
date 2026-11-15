@@ -855,7 +855,7 @@ function sndLoad(){
 }
 function sndAny(){ const m=SND.man; return !!(m&&(Object.values(m.cues).some(Boolean)||Object.values(m.entrances).some(Boolean)||m.def||m.ambient)); }
 // Ambient crowd: its own looping channel at a low level for the whole show. Themes, cues and the bell play on top of it and never touch it.
-const AMBIENT_LEVEL=0.12;
+const AMBIENT_LEVEL=0.25;
 function sndAmbVol(){ if(SND.amb){ try{ SND.amb.volume=Math.max(0,Math.min(1,SND.pref.vol*AMBIENT_LEVEL)); }catch(_){} } }
 function sndAmbStart(){
   try{

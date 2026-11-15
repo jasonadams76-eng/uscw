@@ -228,7 +228,7 @@ Each wrestler's Storylines panel has a Superstar Level: Not set, Jobber, Lower C
 After a count that stops at 2, one to four dots (random each time) appear one at a time after the 2 while the pin hangs, then the kickout line follows.
 
 ## Ambient crowd
-`docs/audio/crowd.mp3` (listed as `ambient` in `sounds.json`) loops quietly for the whole show: it starts when the viewer starts or resumes, runs at 12% of their volume (`AMBIENT_LEVEL` in `app.js`), follows the volume slider and the mute button, and fades out over 4 seconds when the show ends. It is its own audio channel, so themes, the bell and pyro play over it without touching it.
+`docs/audio/crowd.mp3` (listed as `ambient` in `sounds.json`) loops quietly for the whole show: it starts when the viewer starts or resumes, runs at 25% of their volume (`AMBIENT_LEVEL` in `app.js`), follows the volume slider and the mute button, and fades out over 4 seconds when the show ends. It is its own audio channel, so themes, the bell and pyro play over it without touching it.
 
 ## Crowd boos
 `docs/audio/boos.mp3` is the `crowd_boo` cue. It plays on top of everything else (themes and the ambient crowd keep going), and any beat whose text mentions boos, booing or jeers plays it automatically, just like pyro. The AI writer is told to write the mention and not add the cue itself.
@@ -248,3 +248,5 @@ The `intro_music` cue plays once through to the end of the file at a steady 40% 
 A count that includes a 4 (a rope-break count, `1 2 3 4`) is not a pin attempt: it shows as a plain italic line ("The referee counts… 1 … 2 … 3 … 4"), one number per second, with no big numbers, no dots and no count sounds. Only 1 2 and 1 2 3 counts get the big-number display and the crowd sounds.
 
 The slam clip was boosted by 14 dB (with a limiter) because it was much quieter than the other effects.
+
+The ambient clip is 3 minutes taken from 27:30 of a one-hour stadium crowd recording. Its last 2 seconds are blended into the first 2 so the loop restart is inaudible.
