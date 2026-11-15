@@ -247,7 +247,7 @@ The `intro_music` cue plays once through to the end of the file at a steady 40% 
 
 A count that includes a 4 (a rope-break count, `1 2 3 4`) is not a pin attempt: it shows as a plain italic line ("The referee counts… 1 … 2 … 3 … 4"), one number per second, with no big numbers, no dots and no count sounds. Only 1 2 and 1 2 3 counts get the big-number display and the crowd sounds.
 
-The slam clip was boosted by 14 dB (with a limiter) because it was much quieter than the other effects.
+The slam clip was boosted by 14 dB (with a limiter) because it was much quieter than the other effects. The clip is 4 s long: the original 2.2 s hit with a crowd-reaction tail added (a few seconds of the ambient stadium crowd blended in under the end) that swells, holds for a moment and then fades to silence, so the impact no longer cuts off. The hit is still 0.78 s in, so the timing note above is unchanged.
 
 The ambient clip is 3 minutes taken from 27:30 of a one-hour stadium crowd recording. Its last 2 seconds are blended into the first 2 so the loop restart is inaudible.
 
