@@ -876,7 +876,16 @@ function sndFile(cue){
   if(cue==='entrance') return m.def;
   if(cue.startsWith('entrance:')){
     const id=cue.slice(9), w=S.wrestlers&&S.wrestlers[id];   // a theme can be listed by wrestler id or by ring name
-    return m.entrances[id]||(w&&m.entrances[String(w.ringName||'').trim().toLowerCase()])||m.def;
+    if(m.entrances[id]) return m.entrances[id];
+    if(w){
+      const rn=String(w.ringName||'').trim().toLowerCase();
+      if(m.entrances[rn]) return m.entrances[rn];
+      // forgiving match: ignore case, quotes and punctuation, and allow extra words ("Sweardog “The Kraken” McKraken Jr.")
+      const norm=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(), nr=' '+norm(w.ringName)+' ';
+      const hit=Object.keys(m.entrances).find(k=>{ const nk=norm(k); return nk.length>=4&&(nk===nr.trim()||nr.includes(' '+nk+' ')); });
+      if(hit) return m.entrances[hit];
+    }
+    return m.def;
   }
   return m.cues[cue]||'';
 }
