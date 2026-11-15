@@ -1044,6 +1044,7 @@ function pageWatch(id){
         follow(was1||was);
         if(isCountBeat(b.text)){
           const nums=b.text.match(/[1-4]/g).map(Number), pin=nums[nums.length-1]===3&&nums.length>=3;
+          const rope=nums.includes(4);   // a rope-break count (1 2 3 4) is silent; the crowd count sounds are only for pin attempts
           feed.removeChild(p); const cp=countEl(nums,0); feed.append(cp);
           const finishCount=()=>{
             // A kickout: after the 2, one to four dots appear one at a time while the pin hangs, then the kickout line follows.
@@ -1058,7 +1059,7 @@ function pageWatch(id){
           const showNum=i=>{
             const wz=nearBottom();
             const n=h('span',{class:'n'},String(nums[i])); cp.append(n); follow(wz||was1);
-            sndCount(nums[i],pin);
+            if(!rope) sndCount(nums[i],pin);
             if(i>=nums.length-1){ finishCount(); return; }
             const gap=1000/speed, dot=gap/6;
             const nd=h('span',{class:'d'}); cp.append(nd);
