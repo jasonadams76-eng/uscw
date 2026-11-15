@@ -268,3 +268,6 @@ The show has no commercial breaks, so the AI is told never to write "welcome bac
 
 ## How an entrance theme is found
 A theme is matched by wrestler id first, then by ring name. The ring-name match ignores case, quotes and punctuation, and allows extra words around the name (so a key of `sweardog mckraken` also matches “Sweardog McKraken Jr.”). The manifest lists Sweardog under both spellings, McKraken and McKracken. If a theme still doesn't play, the key in `docs/audio/sounds.json` doesn't match the wrestler's exact ring name or id: add a line for it.
+
+## Segment headers on the live page
+Only matches get a segment header (the match card with the wrestlers, title and stipulation). Promos, interviews, backstage scenes, angles and ceremonies have no header and the text simply starts. The show intro keeps its logo banner. This only changes what viewers see; the event builder still lists every segment.

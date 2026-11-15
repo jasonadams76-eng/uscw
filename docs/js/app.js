@@ -1016,6 +1016,7 @@ function pageWatch(id){
         feed.append(h('div',{class:'w-seg w-intro'+(intro?' anim':'')},evImg(e,'intro-logo'),h('span',{class:'tag navy'},'Show Intro')));
         return intro?Math.round(1600/speed):0;
       }
+      if(sg.type!=='match') return 0;   // only matches get a segment header; promos, backstage scenes and the rest just start talking
       const sides=(sg.sides||[]).filter(x=>x.length);
       const k=1/speed, play=!!animate&&!reduceMotion&&sg.type==='match'&&sides.length>0;
       const mh=sg.type==='match'?matchHeader(sg.sides,play?{k}:null):null;
