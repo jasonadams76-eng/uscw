@@ -873,17 +873,14 @@ function sndFadeOut(ms,duck){
 function sndStop(){ clearInterval(SND.fade); if(SND.music){ try{SND.music.pause();}catch(_){} SND.music=null; } }
 // Call from a click so browsers allow sound later.
 function sndUnlock(){ try{ const a=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='); a.play().catch(()=>{}); }catch(_){} }
-// An entrance theme loops; after a few seconds it drops to 40% so the announcers can be heard over it.
-function sndDuck(a){
-  const full=a.volume, low=full*0.4;
-  SND.duck=setTimeout(()=>{ const t0=Date.now(); const iv=setInterval(()=>{ if(SND.music!==a){ clearInterval(iv); return; } const k=Math.min(1,(Date.now()-t0)/1500); try{ a.volume=full+(low-full)*k; }catch(_){} if(k>=1) clearInterval(iv); },100); },4000);
-}
+// A looping entrance theme plays at a steady 40% of the viewer's volume from the first second, so the announcers can be heard over it.
+const THEME_LEVEL=0.4;
 function sndPlay(cue,force,keep,loop){
   try{
     if(!cue||(!force&&!SND.pref.on)) return false;
     const f=sndFile(cue); if(!f) return false;
     const a=new Audio('audio/'+encodeURI(f)); a.volume=Math.max(0,Math.min(1,SND.pref.vol));
-    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); SND.keep=!!keep; if(loop){ a.loop=true; sndDuck(a); } }
+    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); SND.keep=!!keep; if(loop){ a.loop=true; a._k=THEME_LEVEL; a.volume=Math.max(0,Math.min(1,SND.pref.vol*THEME_LEVEL)); } }
     a.addEventListener('error',()=>{ if(SND.music===a) SND.music=null; });
     const pr=a.play(); if(pr&&pr.catch) pr.catch(()=>{});
     return true;
@@ -974,7 +971,7 @@ function pageWatch(id){
     const pauseBtn=h('button',{class:'btn alt sm',type:'button',onclick:()=>{
       st.paused=!st.paused; pauseBtn.textContent=st.paused?'▶ Resume':'❚❚ Pause'; if(!st.paused) playNext(); }},'❚❚ Pause');
     const muteBtn=h('button',{class:'btn alt sm',type:'button',title:'Sound on/off',style:'display:none',onclick:()=>{ SND.pref.on=!SND.pref.on; sndSave(); if(!SND.pref.on) sndStop(); drawMute(); }});
-    const volIn=h('input',{type:'range',min:'0',max:'100',value:Math.round(SND.pref.vol*100),title:'Volume',style:'width:80px;display:none',oninput:e=>{ SND.pref.vol=Number(e.target.value)/100; sndSave(); if(SND.music){ try{SND.music.volume=SND.pref.vol;}catch(_){} } }});
+    const volIn=h('input',{type:'range',min:'0',max:'100',value:Math.round(SND.pref.vol*100),title:'Volume',style:'width:80px;display:none',oninput:e=>{ SND.pref.vol=Number(e.target.value)/100; sndSave(); if(SND.music){ try{SND.music.volume=Math.min(1,SND.pref.vol*(SND.music._k||1));}catch(_){} } }});
     function drawMute(){ muteBtn.textContent=SND.pref.on?'🔊':'🔇'; }
     drawMute(); sndLoad().then(()=>{ if(sndAny()){ muteBtn.style.display=''; volIn.style.display=''; } });
     wrap.append(h('div',{class:'w-bar'},pauseBtn,h('div',{class:'w-prog'},fill),muteBtn,volIn,h('a',{href:'#event-'+id,class:'cond',style:'color:var(--on-navy)'},'Leave')),feed);
