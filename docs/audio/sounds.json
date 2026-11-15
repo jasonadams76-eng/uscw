@@ -1,7 +1,8 @@
 {
   "cues": {
     "intro_music": "uscw-theme.mp3",
-    "bell": "bell.mp3"
+    "bell": "bell.mp3",
+    "pyro": "pyro.mp3"
   },
   "entrances": {
     "hardbody harrison": "entrance-hardbody.mp3",

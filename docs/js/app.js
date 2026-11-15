@@ -32,7 +32,7 @@ const PLE_MONTHS = [
   ['May','Memphis in May'],['June','Summer Spectacular'],['July','Beach Bash'],['August','Clash of the Titans'],
   ['September','Annihilation'],['October','Halloween Horror'],['November','Rumble in the Jungle'],['December','Holiday Havoc']
 ];
-const CUES = [['','No sound'],['intro_music','Show intro music'],['bell','Bell'],['crowd_pop','Crowd pop'],['crowd_boo','Crowd boos'],['crowd_chant','Crowd chant'],['mat_slam','Slam on the mat'],['pin_count','Pin count'],['chair_shot','Chair shot'],['entrance','Entrance theme…']];
+const CUES = [['','No sound'],['intro_music','Show intro music'],['bell','Bell'],['pyro','Pyro'],['crowd_pop','Crowd pop'],['crowd_boo','Crowd boos'],['crowd_chant','Crowd chant'],['mat_slam','Slam on the mat'],['pin_count','Pin count'],['chair_shot','Chair shot'],['entrance','Entrance theme…']];
 const LENGTHS = [[1,'Short · 1 min'],[3,'Medium · 3 min'],[6,'Long · 6 min'],[10,'Epic · 10 min']];
 const WORDS_PER_MIN = 200, REVEAL_WPS = 3.3, BREATH = 0.25;   // reveal pace: must match the Worker's timeline
 const defLength = type => type==='match'?6:type==='show_intro'?4:3;
@@ -892,12 +892,15 @@ function sndPlay(cue,force,keep,loop){
 // A new beat arrives: let any music fade away under it, then play the beat's own sound.
 // The show theme is long: it drops under the announcers and fades slowly. Other music fades out quickly.
 // A theme marked keep (a winner's theme, or an entrance in a promo) plays through plain beats; new music or a new segment fades it.
-function sndBeat(cue,keep,newSeg,win){
+// Any beat that mentions pyro or fireworks gets the pyro sound on top of whatever else is playing (the theme keeps going).
+const PYRO_RE=/\b(pyro|pyrotechnics?|fireworks?)\b/i;
+function sndBeat(cue,keep,newSeg,win,text){
   const music=!!win||sndIsMusic(cue||'');
   // An entrance theme keeps looping until the next music starts, the bell rings or the segment changes.
   if(SND.music&&!(SND.keep&&!newSeg&&!music&&cue!=='bell')) (SND.intro?sndFadeOut(22000,0.35):sndFadeOut(cue==='bell'?1500:(music&&SND.keep?1000:4000)));
   if(cue) sndPlay(cue,false,(cue||'').startsWith('entrance'),(cue||'').startsWith('entrance')&&!win);
   if(win) sndPlay('entrance:'+win,false,true,false);
+  if(cue!=='pyro'&&PYRO_RE.test(text||'')) sndPlay('pyro');
 }
 
 // A pin or rope-break count: a beat that is only the numbers, e.g. "1 2" or "1 2 3". The page times it and plays the crowd count.
@@ -1016,7 +1019,7 @@ function pageWatch(id){
       const hold=b.seg?segHeader(b.seg,true):0;
       if(hold>0) follow(was);
       const runBeat=()=>{
-        sndBeat(b.cue||'',curType!=='match',!!b.seg,b.win||'');
+        sndBeat(b.cue||'',curType!=='match',!!b.seg,b.win||'',b.text||'');
         const was1=nearBottom();
         const p=h('p',{class:'w-beat'+(/^\s*\(/.test(b.text||'')?' w-act':'')}); feed.append(p);
         follow(was1||was);
