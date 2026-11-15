@@ -197,7 +197,7 @@ Run `node tools/stamp.js` before each commit that changes anything in `docs/` �
 - In promos, backstage segments and angles, an `entrance:<id>` cue also plays the theme through following beats. The AI prompt asks for these cues when a wrestler walks to the ring.
 
 ## Entrance themes in matches
-An entrance theme loops under the announcers (at a steady 40% of the viewer’s volume from the start) until the next theme starts, the bell cue plays, or the segment changes. `docs/audio/bell.mp3` is the bell sound.
+An entrance theme plays once through (no looping, at a steady 40% of the viewer’s volume from the start) unless the next theme starts, the bell cue plays, or the segment changes first. In promos, interviews and other non-match segments it also fades out over 1.5 s as soon as a wrestler starts talking (a line that begins with a wrestler's ring name and a colon; Mike, Earl and Cindy don't count). `docs/audio/bell.mp3` is the bell sound.
 
 ## Intro rundown, main-event hype and mirrored feuds
 - The show intro gives every match 2 to 3 sentences on why to care (Mike plus Earl). The AI draws only on facts on file; the built-in writer uses feuds, recent results, the title and the stipulation.

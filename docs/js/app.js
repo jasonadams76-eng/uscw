@@ -906,7 +906,7 @@ function sndPlay(cue,force,keep,loop){
     if(!cue||(!force&&!SND.pref.on)) return false;
     const f=sndFile(cue); if(!f) return false;
     const a=new Audio('audio/'+encodeURI(f)); a.volume=Math.max(0,Math.min(1,SND.pref.vol));
-    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); SND.keep=!!keep; if(loop){ a.loop=true; a._k=THEME_LEVEL; a.volume=Math.max(0,Math.min(1,SND.pref.vol*THEME_LEVEL)); }
+    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); SND.keep=!!keep; if(loop){ a._k=THEME_LEVEL; a.volume=Math.max(0,Math.min(1,SND.pref.vol*THEME_LEVEL)); }
       else if(cue==='intro_music'){ a._k=THEME_LEVEL; a.volume=Math.max(0,Math.min(1,SND.pref.vol*THEME_LEVEL)); } }   // the show theme plays once, all the way through, at a steady level
     a.addEventListener('error',()=>{ if(SND.music===a) SND.music=null; });
     const pr=a.play(); if(pr&&pr.catch) pr.catch(()=>{});
@@ -922,6 +922,13 @@ const PYRO_RE=/\b(pyro|pyrotechnics?|fireworks?)\b/i;
 const ROAR_RE=/\b(roars?|roared|roaring|erupts?|erupted|erupting|explodes?|exploded|exploding|cheers?|cheered|cheering|ovation|thunderous|deafening|screams?|screamed|screaming|goes wild|went wild|go wild|on their feet)\b/i;
 const isPop=c=>c==='crowd_pop'||c==='crowd_pop_big';
 const BOO_RE=/\b(boo|boos|booed|booing|jeer|jeers|jeered|jeering)\b/i;
+const normName=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+// True when a beat is spoken by a wrestler ("Hardbody Harrison: “…”"), not by an announcer or interviewer.
+function wrestlerSpeaks(text){
+  const m=/^\s*([^:“"(]{2,60}):/.exec(text||''); if(!m) return false;
+  const sp=normName(m[1]); if(sp.length<3||/^(mike johnson|earl backwater|cindy maxwell)$/.test(sp)) return false;
+  return Object.values(S.wrestlers||{}).some(w=>{ const rn=normName(w&&w.ringName); return rn&&(rn===sp||(rn.length>=4&&(rn.includes(sp)||sp.includes(rn)))); });
+}
 function sndBeat(cue,keep,newSeg,win,text){
   const music=!!win||sndIsMusic(cue||'');
   // An entrance theme keeps looping until the next music starts, the bell rings or the segment changes.
@@ -1055,6 +1062,8 @@ function pageWatch(id){
       const runBeat=()=>{
         // The slam sound waits for the end of its line, timed so the hit lands as the last words appear.
         const slamLate=b.cue==='mat_slam'&&!isCountBeat(b.text)&&(b.text||'').trim().length>0;
+        // In a promo or interview the entrance theme fades out as soon as a wrestler starts talking.
+        if(curType!=='match'&&SND.music&&!SND.intro&&wrestlerSpeaks(b.text)) sndFadeOut(1500);
         const popM=isPop(b.cue)&&!isCountBeat(b.text)?ROAR_RE.exec(b.text||''):null;
         const booM=!isCountBeat(b.text)?BOO_RE.exec(b.text||''):null;   // boos and jeers sound as the line reaches the word
         sndBeat((slamLate||popM||(booM&&b.cue==='crowd_boo'))?'':(b.cue||''),curType!=='match',!!b.seg,b.win||'',b.text||'');
