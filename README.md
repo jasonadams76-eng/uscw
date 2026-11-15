@@ -253,3 +253,6 @@ The ambient clip is 3 minutes taken from 27:30 of a one-hour stadium crowd recor
 
 ## Bell timing
 The bell sound plays on the beat whose text says the bell rings. If the AI puts the bell cue on the referee/build-up line just before it, the Worker moves it to the next line that mentions the bell, and the live player does the same for scripts that were already saved.
+
+## No title, no championship talk
+When a match has no title/billing in its details, the AI prompt says so explicitly (and the general rules repeat it): the writer must not call it a title match or mention championship implications, a title shot or a belt. A wrestler's own reigning title can still come up as background. The fix is in the Worker prompt only, so it applies to matches generated after the Worker is redeployed.
