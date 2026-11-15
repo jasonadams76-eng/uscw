@@ -256,3 +256,6 @@ The bell sound plays on the beat whose text says the bell rings. If the AI puts 
 
 ## No title, no championship talk
 When a match has no title/billing in its details, the AI prompt says so explicitly (and the general rules repeat it): the writer must not call it a title match or mention championship implications, a title shot or a belt. A wrestler's own reigning title can still come up as background. The fix is in the Worker prompt only, so it applies to matches generated after the Worker is redeployed.
+
+## Crowd pop timing
+A `crowd_pop` / `crowd_pop_big` cue on a beat whose text talks about the crowd roaring (roar, erupts, cheers, ovation, goes wild and similar) starts as the line reaches that word, about 0.3 s before it is fully on screen, instead of at the start of the line. If the AI put the cue on the line before and the next line is an action line `( … )` that mentions the roar, the player moves the cue to that action line. Pops on lines that never mention a roar still play at the start of the line, as before.
