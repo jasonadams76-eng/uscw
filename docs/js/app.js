@@ -897,7 +897,8 @@ function sndPlay(cue,force,keep,loop){
     if(!cue||(!force&&!SND.pref.on)) return false;
     const f=sndFile(cue); if(!f) return false;
     const a=new Audio('audio/'+encodeURI(f)); a.volume=Math.max(0,Math.min(1,SND.pref.vol));
-    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); SND.keep=!!keep; if(loop){ a.loop=true; a._k=THEME_LEVEL; a.volume=Math.max(0,Math.min(1,SND.pref.vol*THEME_LEVEL)); } }
+    if(sndIsMusic(cue)){ sndFadeOut(600); SND.music=a; SND.intro=(cue==='intro_music'); SND.keep=!!keep; if(loop){ a.loop=true; a._k=THEME_LEVEL; a.volume=Math.max(0,Math.min(1,SND.pref.vol*THEME_LEVEL)); }
+      else if(cue==='intro_music'){ a._k=THEME_LEVEL; a.volume=Math.max(0,Math.min(1,SND.pref.vol*THEME_LEVEL)); } }   // the show theme plays once, all the way through, at a steady level
     a.addEventListener('error',()=>{ if(SND.music===a) SND.music=null; });
     const pr=a.play(); if(pr&&pr.catch) pr.catch(()=>{});
     return true;
@@ -912,7 +913,8 @@ const BOO_RE=/\b(boo|boos|booed|booing|jeer|jeers|jeered|jeering)\b/i;
 function sndBeat(cue,keep,newSeg,win,text){
   const music=!!win||sndIsMusic(cue||'');
   // An entrance theme keeps looping until the next music starts, the bell rings or the segment changes.
-  if(SND.music&&!(SND.keep&&!newSeg&&!music&&cue!=='bell')) (SND.intro?sndFadeOut(22000,0.35):sndFadeOut(cue==='bell'?1500:(music&&SND.keep?1000:4000)));
+  // The show theme plays to the end of the file unless another theme or the bell comes in; segment changes don't cut it.
+  if(SND.music&&!(SND.intro&&!music&&cue!=='bell')&&!(SND.keep&&!newSeg&&!music&&cue!=='bell')) sndFadeOut(cue==='bell'?1500:(SND.intro?2500:(music&&SND.keep?1000:4000)));
   if(cue) sndPlay(cue,false,(cue||'').startsWith('entrance'),(cue||'').startsWith('entrance')&&!win);
   if(win) sndPlay('entrance:'+win,false,true,false);
   if(cue!=='pyro'&&PYRO_RE.test(text||'')) sndPlay('pyro');

@@ -232,3 +232,6 @@ After a count that stops at 2, one to four dots (random each time) appear one at
 
 ## Crowd boos
 `docs/audio/boos.mp3` is the `crowd_boo` cue. It plays on top of everything else (themes and the ambient crowd keep going), and any beat whose text mentions boos, booing or jeers plays it automatically, just like pyro. The AI writer is told to write the mention and not add the cue itself.
+
+## Show theme
+The `intro_music` cue plays once through to the end of the file at a steady 40% of the viewer's volume (no fade-down). Plain beats and new segments do not cut it; it stops early only when another theme (an entrance or winner theme) or the bell comes in, which fade it out over 2.5 s and 1.5 s.
