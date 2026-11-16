@@ -680,14 +680,53 @@ function pageWrestler(id){
 function stat(l,v){ return v?h('div',{class:'stat'},h('small',{},l),h('span',{},v)):null; }
 
 /* ----- wrestler editor ----- */
-const REQ_TEXT=[['ringName','Ring name'],['nickname','Nickname'],['realName','Your name'],['hometown','Hometown'],['height','Height'],['weight','Weight'],['age','Age'],['style','Wrestling style'],['theme','Entrance theme music'],['bio','Biography']];
+const REQ_TEXT=[['ringName','Ring name'],['realName','Your name'],['hometown','Hometown'],['height','Height'],['weight','Weight'],['age','Age'],['style','Wrestling style'],['theme','Entrance theme music'],['bio','Biography']];
+const STYLES=['Powerhouse','High Flyer','Technician','Martial Artist'];
+const MIN_MOVES=15;
+// 25 moves per style, already sorted into the five move boxes; the "Fill in moves" button adds 15 of them at random.
+const STYLE_MOVES={
+ 'Powerhouse':{
+  strikes:['Running Lariat','Big Boot','Shoulder Block','Headbutt','Knife-Edge Chop'],
+  grapples:['Powerslam','Spinebuster','Gorilla Press Slam','Delayed Vertical Suplex','Fallaway Slam','Chokeslam','Samoan Drop','Belly-to-Belly Suplex','Running Powerbomb'],
+  submissions:['Bearhug','Full Nelson','Torture Rack'],
+  aerial:['Running Splash','Flying Shoulder Tackle','Corner Avalanche'],
+  signature:['Flex and Roar Taunt','Ground Pound','Mat-Pounding Taunt','Boot Stomp Combo','Turnbuckle Rampage']},
+ 'High Flyer':{
+  strikes:['Enzuigiri','Springboard Dropkick','Superkick','Spinning Heel Kick','Handspring Back Elbow'],
+  grapples:['Hurricanrana','Frankensteiner','Sunset Flip Powerbomb','Tornado DDT','Arm Drag Takedown'],
+  submissions:['Octopus Stretch','Cross-Arm Breaker'],
+  aerial:['Shooting Star Press','Moonsault','450 Splash','Swanton Bomb','Corkscrew Plancha','Suicide Dive','Springboard Crossbody','Phoenix Splash','Top-Rope Elbow Drop'],
+  signature:['Crowd Clap Taunt','Rope-Walk Flip','Cartwheel Taunt','Top-Turnbuckle Pose']},
+ 'Technician':{
+  strikes:['Forearm Smash','European Uppercut','Rolling Elbow','Low Dropkick to the Knee'],
+  grapples:['Northern Lights Suplex','Release German Suplex','Dragon Suplex','Fisherman Suplex','Snap Suplex','Exploder Suplex','Side Russian Legsweep'],
+  submissions:['Ankle Lock','Figure-Four Leglock','Sharpshooter','Armbar','Kimura Lock','Boston Crab','Cloverleaf','Triangle Choke','Rear Naked Choke','Crossface'],
+  aerial:['Diving Double Axe Handle'],
+  signature:['Cradle Pin Counter','Rolling Takedown Chain','Wrist Control Reversal']},
+ 'Martial Artist':{
+  strikes:['Roundhouse Kick','Spinning Back Kick','Axe Kick','Side Kick','Front Push Kick','Jumping Knee','Palm Strike','Hammer Fist','Elbow Strike','Low Shin Kick','Capoeira Kick','Spinning Back Fist','Superman Punch','Head Kick Combination'],
+  grapples:['Hip Toss','Osoto Gari Takedown','Wrist-Lock Throw'],
+  submissions:['Heel Hook','Omoplata','Sleeper Hold','Judo Arm Lock'],
+  aerial:['Flying Knee Strike','Flying Scissor Kick'],
+  signature:['Fighting Stance Taunt','Bow Before the Strike Taunt']}
+};
+// 15 random moves from a style's 25, grouped by move box (each box keeps its list order).
+function pickStyleMoves(style){
+  const L=STYLE_MOVES[style]; if(!L) return null;
+  const all=[]; MOVE_CATS.forEach(([k])=>(L[k]||[]).forEach((m,i)=>all.push([k,i,m])));
+  for(let i=all.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [all[i],all[j]]=[all[j],all[i]]; }
+  const out={}; MOVE_CATS.forEach(([k])=>out[k]=[]);
+  all.slice(0,MIN_MOVES).sort((a,b)=>a[1]-b[1]).forEach(([k,,m])=>out[k].push(m));
+  return out;
+}
+const countMoves=mv=>MOVE_CATS.reduce((n,[k])=>n+((mv&&mv[k])||[]).length,0);
 function missingFields(F){
   const m=[];
   REQ_TEXT.forEach(([k,l])=>{ if(!F[k].value.trim()) m.push([k,l,F[k]]); });
   const wt=F.weight.value.trim(), ag=F.age.value.trim();
   if(wt&&!(/^\d{2,3}$/.test(wt)&&+wt>=50&&+wt<=700)) m.push(['weight','Weight (a number, 50–700)',F.weight]);
   if(ag&&!(/^\d{2}$/.test(ag)&&+ag>=16&&+ag<=99)) m.push(['age','Age (16–99)',F.age]);
-  MOVE_CATS.forEach(([k,l])=>{ if(!lines(F['m_'+k].value).length) m.push(['m_'+k,'at least one move under '+l,F['m_'+k]]); });
+  { const n=MOVE_CATS.reduce((t,[k])=>t+lines(F['m_'+k].value).length,0); if(n<MIN_MOVES) m.push(['m_'+MOVE_CATS[0][0],'at least '+MIN_MOVES+' moves in total (you have '+n+')',F['m_'+MOVE_CATS[0][0]]]); }
   if(!F.finName.value.trim()) m.push(['finName','Finisher name',F.finName]);
   if(!F.finDesc.value.trim()) m.push(['finDesc','Finisher description',F.finDesc]);
   return m;
@@ -716,6 +755,20 @@ function pageEditWrestler(id, isNew){
       h('img',{src:'data:image/webp;base64,'+b64,alt:'Generated wrestler image',style:'width:90px;border-radius:6px'}),
       h('div',{},h('div',{class:'hint'},'This image will be sent with your application for the CEO to approve.'),
         h('button',{type:'button',class:'btn alt sm',style:'margin-top:6px',onclick:()=>{ gen.b64=null; genThumb.replaceChildren(); }},'Remove image'))));},()=>F.refreshGen());
+  const moveBtn=h('button',{type:'button',class:'btn alt sm',title:'Adds '+MIN_MOVES+' random moves that fit the chosen style'},'Fill in moves for my style');
+  const moveCount=h('span',{class:'hint',style:'font-weight:700'});
+  F.refreshMoves=()=>{
+    const n=MOVE_CATS.reduce((t,[k])=>t+lines(F['m_'+k].value).length,0);
+    moveCount.textContent=n+' of '+MIN_MOVES+' moves'+(n>=MIN_MOVES?' ✓':'');
+    moveCount.style.color=n>=MIN_MOVES?'var(--green,#157347)':'';
+    const ok=!!STYLE_MOVES[F.style.value];
+    moveBtn.disabled=!ok; moveBtn.title=ok?'Adds '+MIN_MOVES+' random moves that fit '+F.style.value+' (click again for a new set)':'Choose a wrestling style first';
+  };
+  moveBtn.onclick=()=>{
+    const pick=()=>{ const mvs=pickStyleMoves(F.style.value); if(!mvs) return; MOVE_CATS.forEach(([k])=>{ F['m_'+k].value=mvs[k].join('\n'); }); F.refreshMoves(); };
+    const has=MOVE_CATS.some(([k])=>lines(F['m_'+k].value).length);
+    if(has) confirmDlg('Replace your moves?','This replaces everything now in the five move boxes with '+MIN_MOVES+' random '+F.style.value+' moves.','Replace',pick); else pick();
+  };
   const form=h('form',{onsubmit:async e=>{
     e.preventDefault();
     const miss=missingFields(F);
@@ -741,7 +794,7 @@ function pageEditWrestler(id, isNew){
   }},
     h('div',{class:'cols'},
       inp('ringName','Ring name *','e.g. Marcus “Iron” Hale'),
-      inp('nickname','Nickname *','e.g. The Pride of Pittsburgh'),
+      inp('nickname','Nickname (optional)','e.g. The Pride of Pittsburgh'),
       inp('realName','Your name *','e.g. Jason Adams')),
     h('div',{class:'cols'},
       inp('hometown','Hometown / billed from *','e.g. Pittsburgh, PA'),
@@ -750,7 +803,10 @@ function pageEditWrestler(id, isNew){
       inp('age','Age *','e.g. 29')),
     h('div',{class:'cols'},
       h('div',{class:'f'},h('label',{class:'l'},'Alignment'),F.alignment=h('select',{},['Face','Heel','Tweener'].map(a=>h('option',{value:a,selected:w.alignment===a},a)))),
-      inp('style','Wrestling style *','e.g. Powerhouse, High-flyer, Technician'),
+      h('div',{class:'f'},h('label',{class:'l'},'Wrestling style *'),F.style=h('select',{onchange:()=>F.refreshMoves&&F.refreshMoves()},
+        h('option',{value:''},'Choose…'),
+        STYLES.map(x=>h('option',{value:x,selected:w.style===x},x)),
+        (w.style&&!STYLES.includes(w.style))?h('option',{value:w.style,selected:true},w.style+' (current)'):null)),
       inp('theme','Entrance theme music *','Song / title')),
     h('div',{class:'f'},h('label',{class:'l'},'Biography *'),F.bio=h('textarea',{style:'min-height:150px',placeholder:'Where did they come from? What drives them? Training, rivalries, gimmick…'},w.bio||'')),
     h('div',{class:'sect-h',style:'margin-top:28px'},h('h2',{},'Appearance')),
@@ -761,8 +817,9 @@ function pageEditWrestler(id, isNew){
       h('div',{class:'f'},h('label',{class:'l'},'Ring gear '+(isNew?'*':'')),F.gear=h('textarea',{style:'min-height:80px',maxlength:'600',placeholder:'Trunks or tights, boots, mask, robe, belts, colors…',oninput:()=>F.refreshGen()},ap.gear||''))),
     genBox(),
     h('div',{class:'sect-h',style:'margin-top:28px'},h('h2',{},'Move Set')),
-    h('div',{class:'hint',style:'margin:-6px 0 12px'},'List one move per line, with at least one in every category. Be as comprehensive as you like — the CEO uses this to book your matches.'),
-    h('div',{class:'cols'}, MOVE_CATS.map(([k,l])=>h('div',{class:'f'},h('label',{class:'l'},l+' *'),F['m_'+k]=h('textarea',{placeholder:'One move per line'},(mv[k]||[]).join('\n'))))),
+    h('div',{class:'hint',style:'margin:-6px 0 12px'},'List one move per line. No single box is required, but you need at least '+MIN_MOVES+' moves in total across the five boxes. Be as comprehensive as you like — the CEO uses this to book your matches.'),
+    h('div',{class:'row',style:'margin-bottom:12px;gap:12px'},moveBtn,moveCount),
+    h('div',{class:'cols'}, MOVE_CATS.map(([k,l])=>h('div',{class:'f'},h('label',{class:'l'},l),F['m_'+k]=h('textarea',{placeholder:'One move per line',oninput:()=>F.refreshMoves()},(mv[k]||[]).join('\n'))))),
     h('div',{class:'sect-h',style:'margin-top:20px'},h('h2',{style:'color:var(--red)'},'Finishing Move')),
     h('div',{class:'cols'},
       h('div',{class:'f'},h('label',{class:'l'},'Finisher name *'),F.finName=h('input',{type:'text',value:fin.name||'',placeholder:'e.g. The Iron Curtain',maxlength:'120'})),
@@ -770,7 +827,7 @@ function pageEditWrestler(id, isNew){
     h('div',{class:'row',style:'margin-top:10px'},
       h('button',{class:'btn',type:'submit'},isNew?'Request Contract':'Save Wrestler'),
       h('a',{class:'btn alt',href:wOf(id)?'#wrestler-'+id:'#home',onclick:()=>{S.editing=false;}},'Cancel')));
-  S.editing=true; F.refreshGen();
+  S.editing=true; F.refreshGen(); F.refreshMoves();
   return h('div',{},h('div',{class:'sect-h'},h('h2',{},isNew?'Create Your Wrestler':'Edit '+(w.ringName||'Wrestler'))),
     h('div',{class:'card'},
       h('div',{class:'hint',style:'margin-bottom:14px'},'Every field marked * is required to request your contract. The CEO reviews each request before your wrestler joins the roster.'),
@@ -780,7 +837,7 @@ function pageEditWrestler(id, isNew){
 function legacyMissing(w){
   const m=[]; const mv=w.moves||{}, fin=w.finisher||{};
   REQ_TEXT.forEach(([k,l])=>{ if(!String(w[k]||'').trim()) m.push(l); });
-  MOVE_CATS.forEach(([k,l])=>{ if(!(mv[k]||[]).length) m.push('moves under '+l); });
+  if(countMoves(mv)<MIN_MOVES) m.push('at least '+MIN_MOVES+' moves in total (you have '+countMoves(mv)+')');
   if(!fin.name) m.push('Finisher name'); if(!fin.desc) m.push('Finisher description');
   return m;
 }

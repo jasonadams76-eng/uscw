@@ -327,10 +327,12 @@ const MOVE_KEYS = ['strikes', 'grapples', 'submissions', 'aerial', 'signature'];
 
 const MOVE_LABELS = { strikes: 'Strikes & Kicks', grapples: 'Slams, Suplexes & Power Moves', submissions: 'Submissions', aerial: 'High-Flying & Aerial', signature: 'Signature Moves & Taunts' };
 const GENDERS = ['Male', 'Female', 'Non-binary'];
-function cleanWrestler(b, isNew) {
+const STYLES = ['Powerhouse', 'High Flyer', 'Technician', 'Martial Artist'];
+const MIN_MOVES = 15;
+function cleanWrestler(b, isNew, oldStyle = '') {
   const need = (v, label) => { if (!v) throw new HttpError(400, label + ' is required.'); return v; };
   const ringName = need(str(b.ringName, 60), 'Ring name');
-  const nickname = need(str(b.nickname, 80), 'Nickname');
+  const nickname = str(b.nickname, 80);   // optional
   const realName = need(str(b.realName, 80), 'Your name');
   const hometown = need(str(b.hometown, 80), 'Hometown');
   const height = need(str(b.height, 20), 'Height');
@@ -340,14 +342,17 @@ function cleanWrestler(b, isNew) {
   if (!/^\d{2}$/.test(age) || +age < 16 || +age > 99) throw new HttpError(400, 'Age must be a number from 16 to 99.');
   if (!ALIGNMENTS.includes(b.alignment)) throw new HttpError(400, 'Alignment is required.');
   const style = need(str(b.style, 60), 'Wrestling style');
+  // One of the four styles; a style typed in before the drop-down existed can stay as it is until the player changes it.
+  if (!STYLES.includes(style) && style !== oldStyle) throw new HttpError(400, 'Choose a wrestling style: ' + STYLES.join(', ') + '.');
   const theme = need(str(b.theme, 100), 'Entrance theme music');
   const bio = need(str(b.bio, 4000), 'Biography');
   const moves = {};
   const inMoves = b.moves && typeof b.moves === 'object' ? b.moves : {};
   for (const k of MOVE_KEYS) {
     moves[k] = (Array.isArray(inMoves[k]) ? inMoves[k] : []).map(m => str(m, 120)).filter(Boolean).slice(0, 60);
-    if (!moves[k].length) throw new HttpError(400, 'Add at least one move under ' + (MOVE_LABELS[k] || k) + '.');
   }
+  const totalMoves = MOVE_KEYS.reduce((n, k) => n + moves[k].length, 0);
+  if (totalMoves < MIN_MOVES) throw new HttpError(400, 'Add at least ' + MIN_MOVES + ' moves in total across the five move boxes (you have ' + totalMoves + ').');
   // Appearance + gender are required on a new application; an existing wrestler can be edited without them.
   const ap = b.appearance && typeof b.appearance === 'object' ? b.appearance : {};
   const look = str(ap.look, 600), gear = str(ap.gear, 600);
@@ -398,7 +403,8 @@ async function wrestlerRoutes(request, env, id) {
     if (id !== user.id && !user.isAdmin) throw new HttpError(403, 'You can only edit your own wrestler.');
     const now = Date.now();
     const existing = await env.DB.prepare('SELECT owner_id, data FROM wrestlers WHERE id = ?').bind(id).first();
-    const data = cleanWrestler(await readJson(request), !existing);
+    let oldStyle = ''; if (existing) { try { oldStyle = JSON.parse(existing.data).style || ''; } catch (_) { /* ignore */ } }
+    const data = cleanWrestler(await readJson(request), !existing, oldStyle);
     // New player applications wait for the CEO. Edits keep the current status; a refused application goes back to pending when its owner revises it.
     if (!existing) { if (!user.isAdmin) data.status = 'pending'; }
     else {

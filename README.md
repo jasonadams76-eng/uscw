@@ -274,3 +274,10 @@ Only matches get a segment header. It is centered on the screen and shows each w
 
 ## Mayhem logo size
 The Mayhem logo (`docs/img/mayhem.webp`, 800 px wide) shows at up to 480 px on the Mayhem page, the show's start screen and the show-intro banner. Premium live event logos stay at their old size because those images are only about 388 px wide and would look soft if enlarged. The small logo in the Later Shows list is unchanged.
+
+## Create / edit a wrestler: nickname, style and move set
+- **Nickname** is optional (form and Worker). A blank nickname just doesn't show.
+- **Wrestling style** is a drop-down: Powerhouse, High Flyer, Technician, Martial Artist (required). A style typed in before the drop-down existed stays as it is until the player changes it (the Worker allows the stored value or one of the four).
+- **Move Set**: none of the five boxes is required, but at least 15 moves in total are needed to save (`MIN_MOVES` in `app.js`, `MIN_MOVES` in the Worker, which enforces it too). A live counter shows "n of 15 moves".
+- **Fill in moves for my style** (enabled once a style is chosen) adds 15 random moves from that style's list of 25, each placed in its matching box (`STYLE_MOVES` in `app.js`). If the boxes already have text it asks before replacing; clicking again gives a new random 15.
+- Wrestlers that were saved with fewer than 15 moves are asked to add more the next time they edit and save.
