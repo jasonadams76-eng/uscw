@@ -437,11 +437,11 @@ const STAFF = [
     personality: 'The owner and CEO of USCW. Authoritative, brief and businesslike. He makes announcements and takes part in contract signings and authority angles, and never decides anything that was not given to him.',
     bio: 'Jason Adams is the Owner and CEO of United States Championship Wrestling.' },
   { id: 'staff-mike', name: 'Mike Johnson', title: 'Lead Announcer', gender: 'Male', align: 'Face',
-    personality: 'Professional, precise, technical and serious. Names every move correctly, tries to stay impartial and gets exasperated with Earl.',
-    bio: 'Mike Johnson is the lead play-by-play announcer for Monday Night Mayhem and every USCW premium live event.' },
+    personality: 'Professional, precise, technical and serious. Names every move correctly, tries to stay impartial and gets exasperated with Earl. Wants every match fairly contested so the best man wins.',
+    bio: 'Mike Johnson started his broadcasting career calling high school sports in Jackson, Mississippi. He moved on to become the sports director at WJTV for two years and hosted a morning sports show on local sports talk radio. When CEO Adams first started USCW, he took a chance on the local product and made him lead announcer. During USCW\'s down time, Johnson hosted a nationally syndicated sports radio show, but he is now back full time as the voice of USCW. MJ wants to see every match fairly contested, so the best man wins.' },
   { id: 'staff-earl', name: 'Earl Backwater', title: 'Color Commentator', gender: 'Male', align: 'Heel',
-    personality: 'A shameless heel sympathizer who cheers the villains and cannot stand the fan favorites. Makes excuses for cheating and constantly argues with Mike.',
-    bio: 'Earl Backwater is the color commentator alongside Mike Johnson, and never shy about whose side he is on.' },
+    personality: 'A shameless heel sympathizer who loves the heels and cannot stand the faces, and never hesitates to make his feelings known. Makes excuses for cheating and constantly argues with Mike. His words sometimes get him into hot water with the wrestlers, but nothing stops him from expressing his opinions.',
+    bio: 'Earl Backwater started out as a DJ on a local Arkansas radio station. From there he moved on to color commentary for WFAC wrestling in Newport, Arkansas. After hearing his work, CEO Adams got in touch with Backwater about doing color commentary for USCW. Backwater loves heels, can\'t stand faces and never hesitates to make his feelings known. His words sometimes get him into hot water with the wrestlers, but nothing is going to stop him from expressing his opinions.' },
   { id: 'staff-cindy', name: 'Cindy Maxwell', title: 'Ring Announcer', gender: 'Female', align: 'Face',
     personality: 'Polished and formal. Introduces each competitor and announces the winner after the bell.',
     bio: 'Cindy Maxwell is the ring announcer for USCW. She introduces every competitor and announces every winner.' },
@@ -1337,8 +1337,8 @@ THE USCW CAST (the only non-wrestler characters, plus any people listed under MA
 - Jackie O'Sullivan is an Interviewer: enthusiastic and upbeat, a lifelong wrestling fan living her dream job. She is warm but persistent, and pushes for real answers.
 
 VOICES (keep them identical in every segment):
-- Mike Johnson is the lead play-by-play announcer: professional, precise, technical and serious. He names moves correctly, tries to stay impartial and gets exasperated with Earl.
-- Earl Backwater is the color commentator: a shameless heel sympathizer. He cheers the villains, can't stand the fan favorites, makes excuses for cheating and constantly argues with Mike about which wrestlers he likes and dislikes.
+- Mike Johnson is the lead play-by-play announcer: professional, precise, technical and serious. He names moves correctly, tries to stay impartial, wants every match fairly contested so the best man wins, and gets exasperated with Earl.
+- Earl Backwater is the color commentator: a shameless heel sympathizer. He cheers the villains, can't stand the fan favorites, makes excuses for cheating and constantly argues with Mike about which wrestlers he likes and dislikes. He never hesitates to make his feelings known; his words sometimes get him into hot water with the wrestlers, but nothing stops him from voicing his opinions.
 - Mike and Earl are the only commentators; the cast above never does commentary.
 - MANAGEMENT: when the show details list authority figures (a General Manager, Commissioner and so on), they are real USCW characters. Have one speak or act only when the CEO's brief names them or they are listed as involved in this segment; they never do commentary. Mike and Earl may mention one by name and title in passing when it fits, never inventing what they have decided. An authority figure is not a competitor: never put one in a match, never give one a win or a loss.
 - Never invent an interviewer, host or questioner for a promo or interview. Use Paul Sandler or Jackie O'Sullivan only when the CEO's brief or the player's text names one or clearly has someone asking questions; otherwise the wrestler simply speaks on their own.
