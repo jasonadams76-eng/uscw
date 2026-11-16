@@ -329,6 +329,43 @@ const MOVE_LABELS = { strikes: 'Strikes & Kicks', grapples: 'Slams, Suplexes & P
 const GENDERS = ['Male', 'Female', 'Non-binary'];
 const STYLES = ['Powerhouse', 'High Flyer', 'Technician', 'Martial Artist'];
 const MIN_MOVES = 15;
+// An authority figure (General Manager, Commissioner...) is a non-competing character the CEO creates. It shares the wrestlers table.
+function cleanAuthority(b, isNew) {
+  const need = (v, label) => { if (!v) throw new HttpError(400, label + ' is required.'); return v; };
+  const ringName = need(str(b.ringName, 60), 'Character name');
+  const title = need(str(b.title, 60), 'Role / title');
+  const personality = need(str(b.personality, 600), 'Personality / how they talk');
+  const bio = need(str(b.bio, 4000), 'Biography');
+  if (!ALIGNMENTS.includes(b.alignment)) throw new HttpError(400, 'Alignment is required.');
+  const age = str(b.age, 10), weight = str(b.weight, 10);
+  if (age && (!/^\d{2}$/.test(age) || +age < 16 || +age > 99)) throw new HttpError(400, 'Age must be a number from 16 to 99.');
+  if (weight && (!/^\d{2,3}$/.test(weight) || +weight < 50 || +weight > 700)) throw new HttpError(400, 'Weight must be a number of pounds (50-700).');
+  const ap = b.appearance && typeof b.appearance === 'object' ? b.appearance : {};
+  const look = str(ap.look, 600), gear = str(ap.gear, 600);
+  const gender = GENDERS.includes(b.gender) ? b.gender : '';
+  if (isNew) {
+    if (!gender) throw new HttpError(400, 'Gender is required.');
+    if (!look) throw new HttpError(400, 'Describe their physical appearance.');
+  }
+  const former = b.formerWrestler === true;
+  const out = {
+    role: 'authority', title, personality, ringName, nickname: str(b.nickname, 80), realName: str(b.realName, 80),
+    age, hometown: str(b.hometown, 80), height: str(b.height, 20), weight,
+    alignment: b.alignment, bio, gender, appearance: { look, gear },
+    theme: str(b.theme, 100), formerWrestler: former, wrestledAs: former ? str(b.wrestledAs, 80) : '',
+    style: '', moves: {}, finisher: { name: '', desc: '' }
+  };
+  if (former) {
+    const style = str(b.style, 60);
+    if (style && !STYLES.includes(style)) throw new HttpError(400, 'Choose a wrestling style: ' + STYLES.join(', ') + '.');
+    out.style = style;
+    const inMoves = b.moves && typeof b.moves === 'object' ? b.moves : {};
+    for (const k of MOVE_KEYS) out.moves[k] = (Array.isArray(inMoves[k]) ? inMoves[k] : []).map(m => str(m, 120)).filter(Boolean).slice(0, 60);
+    const fin = b.finisher && typeof b.finisher === 'object' ? b.finisher : {};
+    out.finisher = { name: str(fin.name, 80), desc: str(fin.desc, 600) };
+  } else for (const k of MOVE_KEYS) out.moves[k] = [];
+  return out;
+}
 function cleanWrestler(b, isNew, oldStyle = '') {
   const need = (v, label) => { if (!v) throw new HttpError(400, label + ' is required.'); return v; };
   const ringName = need(str(b.ringName, 60), 'Ring name');
@@ -387,8 +424,9 @@ async function tierMap(env) {
 }
 const wrestlerOut = (r, user, tiers = {}) => {
   const w = { id: r.id, ownerId: r.owner_id, ...JSON.parse(r.data), tier: tiers[r.id] || 'Main Roster' };
+  if (w.role === 'authority') w.tier = 'Management';
   const full = user && (user.isAdmin || user.id === r.id || user.id === r.owner_id);
-  if (!full) { w.realName = ''; w.moves = {}; w.appearance = {}; w.style = ''; if (w.finisher) w.finisher = { name: w.finisher.name || '' }; }   // the finisher description, style and appearance are only for the AI
+  if (!full) { w.realName = ''; w.moves = {}; w.appearance = {}; w.style = ''; w.personality = ''; if (w.finisher) w.finisher = { name: w.finisher.name || '' }; }   // the finisher description, style and appearance are only for the AI
   return w;
 };
 
@@ -416,9 +454,16 @@ async function wrestlerRoutes(request, env, id) {
     const now = Date.now();
     const existing = await env.DB.prepare('SELECT owner_id, data FROM wrestlers WHERE id = ?').bind(id).first();
     let oldStyle = ''; if (existing) { try { oldStyle = JSON.parse(existing.data).style || ''; } catch (_) { /* ignore */ } }
-    const data = cleanWrestler(await readJson(request), !existing, oldStyle);
+    const inBody = await readJson(request);
+    let oldRole = ''; if (existing) { try { oldRole = JSON.parse(existing.data).role || ''; } catch (_) { /* ignore */ } }
+    const wantsAuthority = inBody && inBody.role === 'authority';
+    if ((wantsAuthority || oldRole === 'authority') && !user.isAdmin) throw new HttpError(403, 'Only the CEO can create or edit authority figures.');
+    if (oldRole === 'authority' && !wantsAuthority) throw new HttpError(400, 'This character is an authority figure and cannot be turned into a wrestler.');
+    if (wantsAuthority && existing && oldRole !== 'authority') throw new HttpError(400, 'A wrestler cannot be turned into an authority figure. Create a new character instead.');
+    const data = wantsAuthority ? cleanAuthority(inBody, !existing) : cleanWrestler(inBody, !existing, oldStyle);
     // New player applications wait for the CEO. Edits keep the current status; a refused application goes back to pending when its owner revises it.
-    if (!existing) { if (!user.isAdmin) data.status = 'pending'; }
+    if (data.role === 'authority') { /* the CEO's own character: never pending */ }
+    else if (!existing) { if (!user.isAdmin) data.status = 'pending'; }
     else {
       let old = {}; try { old = JSON.parse(existing.data); } catch (_) { /* ignore */ }
       if (old.status === 'pending') data.status = 'pending';
@@ -555,8 +600,8 @@ async function applicationRoutes(request, env, id) {
 }
 /* ---------------- AI wrestler image (Gemini), one per player per 24 hours ---------------- */
 // The prompt Jason wrote. Only appearance, ring gear, gender, height and weight ever go into it: no names, age, hometown or email.
-const IMAGE_PROMPT = (look, gear, gender, height, weight) =>
-  `Create a professional quality image of a professional wrestler. Here is their description: ${look.replace(/[.\s]+$/, '')}. ${gear.replace(/[.\s]+$/, '')}. They are ${gender}, ${height} tall and weigh ${weight} pounds.`;
+const IMAGE_PROMPT = (look, gear, gender, height, weight, authority) =>
+  `Create a professional quality image of ${authority ? 'a wrestling company authority figure (a manager or executive, not in a ring)' : 'a professional wrestler'}. Here is their description: ${look.replace(/[.\s]+$/, '')}. ${gear.replace(/[.\s]+$/, '')}. They are ${gender}, ${height} tall and weigh ${weight} pounds.`;
 // Cloudflare Workers AI (the default provider). It makes a square picture, so the page centre-crops it to portrait shape.
 const CF_IMAGE_MODEL = '@cf/black-forest-labs/flux-1-schnell';
 const IMAGE_FRAMING = 'Full-length vertical portrait of one wrestler standing in the centre of the frame, facing the camera, head to boots visible with space on both sides, plain dark studio background, no text.';
@@ -576,8 +621,9 @@ async function portraitGenerate(request, env) {
   if (provider === 'gemini' ? !env.GEMINI_API_KEY : !env.AI) throw new HttpError(503, 'Image generation is not set up yet.' + (user.isAdmin ? (provider === 'gemini' ? ' (Add the GEMINI_API_KEY secret.)' : ' (Add a Workers AI binding named AI to the Worker, or set IMAGE_PROVIDER to gemini.)') : ''));
   const b = await readJson(request, 20 * 1024);
   const look = str(b.look, 600), gear = str(b.gear, 600), height = str(b.height, 20), weight = str(b.weight, 10);
+  const authority = b.role === 'authority';
   const gender = GENDERS.includes(b.gender) ? b.gender : '';
-  if (!look || !gear || !gender || !height || !/^\d{2,3}$/.test(weight)) throw new HttpError(400, 'Fill in appearance, ring gear, gender, height and weight first.');
+  if (!look || (!gear && !authority) || !gender || !height || !/^\d{2,3}$/.test(weight)) throw new HttpError(400, 'Fill in appearance, ring gear, gender, height and weight first.');
   await ensurePortraitGen(env);
   const now = Date.now();
   let prev = 0;
@@ -595,7 +641,7 @@ async function portraitGenerate(request, env) {
   if (provider === 'cloudflare') {
     let out;
     try {
-      const prompt = (IMAGE_PROMPT(look, gear, gender, height, weight) + ' ' + IMAGE_FRAMING).slice(0, 2048);
+      const prompt = (IMAGE_PROMPT(look, gear, gender, height, weight, authority) + ' ' + (authority ? IMAGE_FRAMING.replace('one wrestler', 'one person') : IMAGE_FRAMING)).slice(0, 2048);
       out = await Promise.race([
         env.AI.run(CF_IMAGE_MODEL, { prompt, steps: 6 }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 70000))
@@ -639,7 +685,7 @@ async function portraitGenerate(request, env) {
         method: 'POST', signal: ctl.signal,
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: IMAGE_PROMPT(look, gear, gender, height, weight) }] }],
+          contents: [{ role: 'user', parts: [{ text: IMAGE_PROMPT(look, gear, gender, height, weight, authority) }] }],
           generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '9:16' } }
         })
       });
@@ -1243,7 +1289,7 @@ const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 const AI_CUES = ['intro_music', 'bell', 'pyro', 'crowd_pop', 'crowd_pop_big', 'crowd_boo', 'crowd_chant', 'mat_slam', 'pin_count', 'chair_shot'];
 const AI_SYSTEM = `You write the live text for USCW (United States Championship Wrestling), a fictional wrestling league's weekly TV show "Monday Night Mayhem" and its premium live events. Viewers read the text a few lines at a time, like a live broadcast.
 
-THE USCW CAST (the only non-wrestler characters; use only these people, never invent other staff, officials or interviewers):
+THE USCW CAST (the only non-wrestler characters, plus any people listed under MANAGEMENT in the show details; use only these people, never invent other staff, officials or interviewers):
 - Jason Adams is the Owner and CEO. Authoritative, brief and businesslike. He appears only in ceremonies, announcements and authority angles, or when the brief names him, and never decides anything that was not given to you.
 - Cindy Maxwell is the Ring Announcer: polished and formal. She introduces each competitor before a match (hometown, and the title on the line when there is one) and announces the winner after the bell. She also reads formal announcements.
 - Paul Sandler is an Interviewer: straight-laced and probing. He asks direct questions.
@@ -1253,6 +1299,7 @@ VOICES (keep them identical in every segment):
 - Mike Johnson is the lead play-by-play announcer: professional, precise, technical and serious. He names moves correctly, tries to stay impartial and gets exasperated with Earl.
 - Earl Backwater is the color commentator: a shameless heel sympathizer. He cheers the villains, can't stand the fan favorites, makes excuses for cheating and constantly argues with Mike about which wrestlers he likes and dislikes.
 - Mike and Earl are the only commentators; the cast above never does commentary.
+- MANAGEMENT: when the show details list authority figures (a General Manager, Commissioner and so on), they are real USCW characters. Have one speak or act only when the CEO's brief names them or they are listed as involved in this segment; they never do commentary. Mike and Earl may mention one by name and title in passing when it fits, never inventing what they have decided. An authority figure is not a competitor: never put one in a match, never give one a win or a loss.
 - Never invent an interviewer, host or questioner for a promo or interview. Use Paul Sandler or Jackie O'Sullivan only when the CEO's brief or the player's text names one or clearly has someone asking questions; otherwise the wrestler simply speaks on their own.
 
 CROWD REACTIONS (firm rule; the live crowd always behaves like this, and every segment follows it):
@@ -1283,6 +1330,18 @@ const aiIds = v => (Array.isArray(v) ? v : []).filter(x => typeof x === 'string'
 
 function aiProfile(r, facts, levels) {
   const w = JSON.parse(r.data), mv = w.moves || {};
+  if (w.role === 'authority') {
+    const f0 = w.finisher || {};
+    return [
+      `- ${w.ringName} (id: ${r.id}) is an AUTHORITY FIGURE, ${w.title || 'authority figure'}${w.nickname ? ` “${w.nickname}”` : ''}: ${w.alignment || 'Tweener'}${w.hometown ? `, from ${w.hometown}` : ''}. Not a competitor.`,
+      w.personality ? `  How they talk and act: ${String(w.personality).slice(0, 600)}` : '',
+      w.bio ? `  Bio: ${String(w.bio).slice(0, 700)}` : '',
+      w.appearance && w.appearance.look ? `  Appearance: ${String(w.appearance.look).slice(0, 400)}` : '',
+      w.appearance && w.appearance.gear ? `  Usual attire: ${String(w.appearance.gear).slice(0, 400)}` : '',
+      w.formerWrestler ? `  A former wrestler${w.wrestledAs ? ` who wrestled as ${w.wrestledAs}` : ''}${w.style ? `, a ${w.style}` : ''}${f0.name ? `, known for the finisher ${f0.name}` : ''}. The announcers may mention that history.` : '',
+      ...(facts[r.id] || []).map(t => `  Storyline: ${t}`)
+    ].filter(Boolean).join('\n');
+  }
   const moves = MOVE_KEYS.map(k => (Array.isArray(mv[k]) && mv[k].length ? `${MOVE_LABELS[k]}: ${mv[k].slice(0, 5).join('; ')}` : '')).filter(Boolean).join(' | ');
   const f = w.finisher || {};
   const lines = [
@@ -1318,10 +1377,16 @@ function levelGuide(b, nameOf) {
 function crowdGuide(b, nameOf) {
   const seg = b.segment || {}, al = b.align || {};
   const kindOf = id => (al[id] === 'Face' || al[id] === 'Heel') ? al[id] : 'Tweener';
-  const sides = (seg.sides || []).filter(s => s && s.length);
+  const auth = b.authority || {};
+  const authIds = [...new Set((seg.sides || []).flat().filter(id => auth[id]))];
+  const sides = (seg.sides || []).map(s => (s || []).filter(id => !auth[id])).filter(s => s.length);
   const all = sides.flat();
-  if (!all.length) return '';
+  if (!all.length && !authIds.length) return '';
   const lines = [];
+  for (const id of authIds) {
+    const k = kindOf(id), n = nameOf(id);
+    lines.push(k === 'Face' ? `${n} (authority figure): the crowd cheers and respects ${n}` : k === 'Heel' ? `${n} (authority figure): the crowd boos ${n}` : `${n} (authority figure): mixed reaction, some cheer and some boo`);
+  }
   const solo = sides.length < 2;
   for (let i = 0; i < sides.length; i++) {
     const opp = solo ? [] : sides.filter((_, j) => j !== i).flat();
@@ -1338,6 +1403,7 @@ function crowdGuide(b, nameOf) {
     }
   }
   let extra = '';
+  if (!all.length) return `CROWD REACTION (firm rule; follow it exactly and never say face, heel or tweener on air):\n${lines.map(x => '- ' + x).join('\n')}`;
   if (!solo && all.every(id => kindOf(id) === 'Heel')) extra = '\nEvery wrestler in this match is a villain, so there are no boos at all: the fans just cheer the big moves by either side (use crowd_pop on big moves, never crowd_boo).';
   else if (!solo && all.every(id => kindOf(id) === 'Face')) extra = '\nEvery wrestler in this match is a fan favorite, so the crowd cheers both sides.';
   return `CROWD REACTION (firm rule, worked out from the line-up; follow it exactly and never say face, heel or tweener on air):\n${lines.map(x => '- ' + x).join('\n')}${extra}`;
@@ -1352,6 +1418,7 @@ function aiPrompt(b, profiles, nameOf) {
     `SHOW: ${show.title || 'Monday Night Mayhem'}${show.ple ? ' (premium live event)' : ''}${show.date ? ', ' + show.date : ''}${show.venue || show.city ? ', live from ' + [show.venue, show.city].filter(Boolean).join(', ') : ''}.`,
     show.notes ? `CEO's show notes: ${show.notes}` : '',
     b.champions.length ? `CURRENT CHAMPIONS: ${b.champions.join('; ')}.` : '',
+    b.management && b.management.length ? `MANAGEMENT (USCW authority figures, not competitors):\n${b.management.map(t => '- ' + t).join('\n')}` : '',
     profiles ? `WRESTLERS:\n${profiles}` : '',
     levelGuide(b, nameOf),
     crowdGuide(b, nameOf),
@@ -1493,6 +1560,12 @@ async function aiDraft(request, env) {
   const names = {}; for (const r of rows) { try { names[r.id] = JSON.parse(r.data).ringName; } catch (_) { /* skip */ } }
   const nameOf = id => names[id] || 'Unknown Wrestler';
   b.align = {}; for (const r of rows) { try { b.align[r.id] = JSON.parse(r.data).alignment || ''; } catch (_) { /* skip */ } }
+  // Authority figures (GM, Commissioner...): a short list of everyone, so the names stay consistent; the full profile comes only if one is in the segment.
+  b.authority = {}; b.management = [];
+  try {
+    const { results: all } = await env.DB.prepare('SELECT id, data FROM wrestlers').all();
+    for (const r of all || []) { try { const w = JSON.parse(r.data); if (w.role === 'authority') { b.authority[r.id] = true; if (!isUnapproved(r)) b.management.push(`${w.ringName}, ${w.title || 'authority figure'}`); } } catch (_) { /* skip */ } }
+  } catch (_) { /* none */ }
   const profiles = rows.map(r => { try { return aiProfile(r, facts, b.levels); } catch (_) { return ''; } }).filter(Boolean).join('\n');
   b.meetings = []; b.card.meet = [];
   try {
@@ -1640,8 +1713,9 @@ async function championshipRoutes(request, env, id) {
     if (title.kind === 'tag' && holders.length === 1) throw new HttpError(400, 'A tag team title needs two wrestlers (or leave it vacant).');
     if (holders.length) {
       const marks = holders.map(() => '?').join(',');
-      const { results } = await env.DB.prepare(`SELECT id FROM wrestlers WHERE id IN (${marks})`).bind(...holders).all();
+      const { results } = await env.DB.prepare(`SELECT id, data FROM wrestlers WHERE id IN (${marks})`).bind(...holders).all();
       if (results.length !== holders.length) throw new HttpError(400, 'Champion must be someone on the roster.');
+      if (results.some(r => { try { return JSON.parse(r.data).role === 'authority'; } catch (_) { return false; } })) throw new HttpError(400, 'An authority figure cannot hold a title.');
     }
     const since = holders.length && /^\d{4}-\d{2}-\d{2}$/.test(str(b.since, 10)) ? str(b.since, 10) : '';
     const wonAt = holders.length ? str(b.wonAt, 100) : '';
