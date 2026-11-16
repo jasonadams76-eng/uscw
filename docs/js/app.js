@@ -37,6 +37,10 @@ const LENGTHS = [[1,'Short · 1 min'],[3,'Medium · 3 min'],[6,'Long · 6 min'],
 const WORDS_PER_MIN = 200, REVEAL_WPS = 3.3, BREATH = 0.25;   // reveal pace: must match the Worker's timeline
 const defLength = type => type==='match'?6:type==='show_intro'?4:3;
 const wordCount = t => (String(t||'').trim().match(/\S+/g)||[]).length;
+// Estimated segment length (minutes) from the "What happens" text: words x 1.6 (announcer and action lines around it, the same factor the Worker uses to size a draft) at 200 words a minute, rounded up, never below the type's default. null when there is no text.
+const estLength = sg => { const w=wordCount(sg.desc); return w?Math.max(defLength(sg.type),Math.min(30,Math.ceil(w*1.6/200))):null; };
+// Segments whose length follows the text. New promos, interviews and other non-match segments start on it; setting a length by hand turns it off, and saved segments keep their length unless you ask.
+const autoLen = new WeakSet();
 const SEG_TYPES = {show_intro:'Show Intro', match:'Match', promo:'Promo / Interview', backstage:'Backstage Segment', angle:'Angle / Brawl', ceremony:'Ceremony / Announcement', other:'Other'};
 const MOVE_CATS = [
   ['strikes','Strikes & Kicks'],
@@ -1667,18 +1671,39 @@ function pageEditEvent(id){
         h('div',{class:'f'},h('label',{class:'l'},isMatch?'Match title (optional)':'Segment title'),h('input',{type:'text',value:s.title,placeholder:isMatch?'e.g. USCW Championship':'e.g. Contract signing',oninput:e=>{s.title=e.target.value;}})),
         isMatch?h('div',{class:'f'},h('label',{class:'l'},'Stipulation'),h('input',{type:'text',value:s.stip,placeholder:'e.g. Steel Cage, No DQ, 30-min Iron Man',oninput:e=>{s.stip=e.target.value;}})):null),
       sidesBox,
-      h('div',{class:'f',style:'margin-top:10px'},h('label',{class:'l'},isMatch?'Notes / storyline':'What happens'),h('textarea',{maxlength:'12000',placeholder:isMatch?'Build-up, rivalry, what\'s at stake…':'Describe the in-ring or backstage event… (up to 12,000 characters, so a long player promo can be pasted whole)',oninput:e=>{s.desc=e.target.value;}},s.desc)),
+      h('div',{class:'f',style:'margin-top:10px'},h('label',{class:'l'},isMatch?'Notes / storyline':'What happens'),h('textarea',{maxlength:'12000',placeholder:isMatch?'Build-up, rivalry, what\'s at stake…':'Describe the in-ring or backstage event… (up to 12,000 characters, so a long player promo can be pasted whole)',oninput:e=>{s.desc=e.target.value; if(!isMatch&&!isIntro) applyAutoLen();}},s.desc)),
       isMatch?resultBox:null);
     drawSides();
     if(isIntro) el.replaceChildren(el.firstChild);
     // ---- length + script ----
     const isPreset=()=>LENGTHS.some(l=>l[0]===s.length);
-    const customIn=h('input',{type:'number',min:'1',max:'30',style:'width:80px',value:s.length,oninput:e=>{ s.length=Math.max(1,Math.min(30,Math.round(Number(e.target.value))||1)); updateScript(); updateTotal(); }});
+    const customIn=h('input',{type:'number',min:'1',max:'30',style:'width:80px',value:s.length,oninput:e=>{ s.length=Math.max(1,Math.min(30,Math.round(Number(e.target.value))||1)); autoLen.delete(s); drawLenNote(); updateScript(); updateTotal(); }});
     const lenSel=h('select',{style:'width:auto',onchange:e=>{
       if(e.target.value==='custom'){ customWrap.style.display=''; }
-      else { s.length=Number(e.target.value); customWrap.style.display='none'; customIn.value=s.length; updateScript(); updateTotal(); }
+      else { s.length=Number(e.target.value); autoLen.delete(s); customWrap.style.display='none'; customIn.value=s.length; drawLenNote(); updateScript(); updateTotal(); }
     }}, LENGTHS.map(l=>h('option',{value:l[0],selected:s.length===l[0]},l[1])), h('option',{value:'custom',selected:!isPreset()},'Custom…'));
     const customWrap=h('span',{style:'display:'+(isPreset()?'none':'')},customIn,' minutes');
+    // Length follows the "What happens" text while it is on (see estLength).
+    const lenNote=h('div',{class:'hint',style:'margin:0 0 8px'});
+    function drawLenNote(){
+      lenNote.replaceChildren();
+      if(isMatch||isIntro) return;
+      const w=wordCount(s.desc), est=estLength(s);
+      if(!w){ lenNote.style.display='none'; return; }
+      lenNote.style.display='';
+      if(autoLen.has(s)) lenNote.append('Length estimated from '+w+' word'+(w===1?'':'s')+' of text. Pick a length yourself to stop this.');
+      else if(est!==s.length) lenNote.append('The text suggests about '+est+' min. ',h('a',{href:'#',style:'color:var(--red2)',onclick:e=>{ e.preventDefault(); autoLen.add(s); applyAutoLen(); }},'Use the estimate'));
+      else lenNote.style.display='none';
+    }
+    function setLenUI(n){
+      s.length=n;
+      if(LENGTHS.some(l=>l[0]===n)){ lenSel.value=String(n); customWrap.style.display='none'; } else { lenSel.value='custom'; customWrap.style.display=''; }
+      customIn.value=n; updateScript(); updateTotal();
+    }
+    function applyAutoLen(){
+      if(autoLen.has(s)){ const n=estLength(s); if(n!==null&&n!==s.length) setLenUI(n); }
+      drawLenNote();
+    }
     const aiLabel=isIntro?'✨ Polish with AI':'✨ Draft with AI';
     const aiBtn=h('button',{type:'button',class:'btn sm',title:'Gemini writes this segment from the wrestlers’ profiles, storylines and the rest of the card'});
     aiBtn.textContent=aiLabel;
@@ -1740,10 +1765,12 @@ function pageEditEvent(id){
           h('button',{type:'button',class:'btn sm',onclick:()=>{ if(s.beats.some(b=>(b.text||'').trim())) confirmDlg('Redraft the intro?','This replaces the beats below with a fresh draft. Any edits you made to them will be lost.','Redraft',doDraft); else doDraft(); }},'✎ Draft Intro'),
           h('span',{class:'hint'},'Uses the matches, stakes, appearances and each wrestler’s storyline. You can edit everything afterwards.'))));
     }
+    drawLenNote();
     el.append(h('div',{class:'script'},
       h('div',{class:'row',style:'margin-bottom:8px'},
         h('span',{class:'cond',style:'font-weight:700;color:var(--navy)'},'Length'), lenSel, customWrap, aiBtn, polishBtn,
         h('div',{style:'flex:1'}), scriptInfo),
+      lenNote,
       h('div',{class:'hint',style:'margin:0 0 8px'},'Script: the text viewers are shown a few beats at a time when they watch the show. Sound cues play when a beat appears.'),
       beatsBox,
       h('button',{type:'button',class:'btn alt sm',onclick:()=>{s.beats.push({text:'',pause:0,cue:''});drawBeats();}},'+ Add beat')));
@@ -1755,6 +1782,7 @@ function pageEditEvent(id){
   const addBtns=h('div',{class:'row',style:'margin:10px 0 20px'},
     h('span',{class:'cond',style:'color:var(--muted)'},'Add:'),
     Object.entries(SEG_TYPES).map(([k,l])=>h('button',{type:'button',class:'btn alt sm',onclick:()=>{ const seg={id:uid8(),type:k,title:'',stip:'',desc:'',sides:k==='match'?[[],[]]:[[]],length:defLength(k),beats:[],result:{winner:null,finish:''}};
+      if(k!=='match'&&k!=='show_intro') autoLen.add(seg);
       if(k==='show_intro'){ if(d.segments.some(x=>x.type==='show_intro')){toast('This show already has a Show Intro.',true);return;} d.segments.unshift(seg); } else d.segments.push(seg); drawSegs(); }},'+ '+l)));
   if(S.addSub){
     const x=(S.subs||[]).find(y=>y.id===S.addSub); S.addSub=null;
