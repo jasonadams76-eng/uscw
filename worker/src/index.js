@@ -545,6 +545,9 @@ async function applicationRoutes(request, env, id) {
 // The prompt Jason wrote. Only appearance, ring gear, gender, height and weight ever go into it: no names, age, hometown or email.
 const IMAGE_PROMPT = (look, gear, gender, height, weight) =>
   `Create a professional quality image of a professional wrestler. Here is their description: ${look.replace(/[.\s]+$/, '')}. ${gear.replace(/[.\s]+$/, '')}. They are ${gender}, ${height} tall and weigh ${weight} pounds.`;
+// Cloudflare Workers AI (the default provider). It makes a square picture, so the page centre-crops it to portrait shape.
+const CF_IMAGE_MODEL = '@cf/black-forest-labs/flux-1-schnell';
+const IMAGE_FRAMING = 'Full-length vertical portrait of one wrestler standing in the centre of the frame, facing the camera, head to boots visible with space on both sides, plain dark studio background, no text.';
 const IMAGE_COOLDOWN_MS = 24 * 3600 * 1000;
 let portraitGenReady = null;
 function ensurePortraitGen(env) {
@@ -557,7 +560,8 @@ function ensurePortraitGen(env) {
 async function portraitGenerate(request, env) {
   if (request.method !== 'POST') throw new HttpError(405, 'Method not allowed');
   const user = await getUser(request, env, true);
-  if (!env.GEMINI_API_KEY) throw new HttpError(503, 'Image generation is not set up yet.');
+  const provider = String(env.IMAGE_PROVIDER || 'cloudflare').trim().toLowerCase() === 'gemini' ? 'gemini' : 'cloudflare';
+  if (provider === 'gemini' ? !env.GEMINI_API_KEY : !env.AI) throw new HttpError(503, 'Image generation is not set up yet.' + (user.isAdmin ? (provider === 'gemini' ? ' (Add the GEMINI_API_KEY secret.)' : ' (Add a Workers AI binding named AI to the Worker, or set IMAGE_PROVIDER to gemini.)') : ''));
   const b = await readJson(request, 20 * 1024);
   const look = str(b.look, 600), gear = str(b.gear, 600), height = str(b.height, 20), weight = str(b.weight, 10);
   const gender = GENDERS.includes(b.gender) ? b.gender : '';
@@ -576,6 +580,41 @@ async function portraitGenerate(request, env) {
     }
   }
   const refund = () => user.isAdmin ? null : env.DB.prepare('UPDATE portrait_gen SET last_at = ? WHERE user_id = ?').bind(prev, user.id).run();
+  if (provider === 'cloudflare') {
+    let out;
+    try {
+      const prompt = (IMAGE_PROMPT(look, gear, gender, height, weight) + ' ' + IMAGE_FRAMING).slice(0, 2048);
+      out = await Promise.race([
+        env.AI.run(CF_IMAGE_MODEL, { prompt, steps: 6 }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 70000))
+      ]);
+    } catch (e) {
+      await refund();
+      const msg = String((e && e.message) || e || '');
+      console.log('image gen failed (cloudflare)', msg.slice(0, 300));
+      const detail = user.isAdmin ? ` (Cloudflare said: ${msg.replace(/\s+/g, ' ').slice(0, 220) || 'no message'})` : '';
+      if (msg === 'timeout') throw new HttpError(504, 'The image service took too long. Try again in a moment.');
+      if (/daily free allocation|neurons|429|rate limit|too many/i.test(msg)) throw new HttpError(503, 'Image generation has reached its limit for today. Try again tomorrow.' + detail);
+      if (/nsfw|flagged|safety|moderat/i.test(msg)) throw new HttpError(422, 'The image service could not make a picture from that description. Adjust the appearance or ring gear and try again.' + detail);
+      throw new HttpError(502, 'The image service had a problem. Try again in a moment.' + detail);
+    }
+    let b64 = '';
+    try {
+      if (out && typeof out.image === 'string') b64 = out.image;
+      else if (out instanceof ReadableStream || out instanceof ArrayBuffer || ArrayBuffer.isView(out)) {
+        const buf = out instanceof ReadableStream ? await new Response(out).arrayBuffer() : (ArrayBuffer.isView(out) ? out.buffer : out);
+        let bin = ''; const u8 = new Uint8Array(buf);
+        for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+        b64 = btoa(bin);
+      }
+    } catch (e) { b64 = ''; }
+    if (!b64) {
+      await refund();
+      console.log('image gen: cloudflare returned no image');
+      throw new HttpError(502, 'The image service had a problem. Try again in a moment.' + (user.isAdmin ? ' (Cloudflare returned no image.)' : ''));
+    }
+    return json({ image: b64, mime: 'image/jpeg', nextAt: user.isAdmin ? 0 : now + IMAGE_COOLDOWN_MS });
+  }
   // If the first model name is not found (404), try the preview name once.
   const models = [env.GEMINI_MODEL_IMAGE || 'gemini-3.1-flash-image'];
   if (!env.GEMINI_MODEL_IMAGE) models.push('gemini-3.1-flash-image-preview');

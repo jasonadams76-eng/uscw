@@ -9,11 +9,17 @@ SITE_URL = "https://YOUR-GITHUB-USERNAME.github.io/uscw"
 ALLOWED_ORIGINS = "https://YOUR-GITHUB-USERNAME.github.io,http://localhost:8080"
 # The sender address, verified in Brevo (see README section 3)
 SENDER_EMAIL = "YOUR-USCW-ACCOUNT@gmail.com"
+# Wrestler image maker: "cloudflare" (default, free daily allowance) or "gemini" (needs the GEMINI_API_KEY secret and billing).
+# IMAGE_PROVIDER = "cloudflare"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "uscw"
 database_id = "REPLACE-WITH-ID-FROM-wrangler-d1-create"
+
+# Workers AI, used to make wrestler images (Cloudflare Flux). In the dashboard: Settings > Bindings > Add > Workers AI, variable name AI.
+[ai]
+binding = "AI"
 
 # Daily cleanup of expired sessions and tokens
 [triggers]
