@@ -1553,7 +1553,7 @@ async function aiDraft(request, env) {
     x = x && typeof x === 'object' ? x : {};
     const cue = typeof x.cue === 'string' ? x.cue.trim() : '';
     const good = AI_CUES.includes(cue) || (cue.startsWith('entrance:') && ok.has(cue.slice(9)));
-    return { text: aiAction(x.text), pause: Math.min(6, Number(x.pause) || 0), cue: good ? cue : '' };
+    return { text: aiAction(stripCommercial(x.text)), pause: Math.min(6, Number(x.pause) || 0), cue: good ? cue : '' };
   }));
   if (!out.length) throw new HttpError(502, 'Gemini’s reply was empty. Please try again.');
   // The bell must sound on the beat that says it rings, not on the build-up before it.
@@ -1566,6 +1566,39 @@ async function aiDraft(request, env) {
   return json({ ok: true, beats: out, model, fellBack });
 }
 // Action beats must be in parentheses. Dialogue (Name: “...”) and pin counts (1 2) are left alone.
+// The show has no commercial breaks, so nothing may say the broadcast was away. The prompt forbids it, and this removes any that slip through.
+const BREAK_RE = /\b(?:commercial|ad|sponsor(?:ship)?)\s+break\b|\bcommercials\b|\b(?:back\s+from|returning\s+from|coming\s+back\s+from|after|following)\s+(?:the\s+|a\s+|that\s+)?(?:quick\s+|short\s+)?break\b/i;
+const WELCOME_BACK_RE = /\b(?:and\s+)?welcome\s+back(?:\s+(?:to|in)\s+(?:USCW'?s?\s+)?(?:Monday\s+Night\s+Mayhem|the\s+show|the\s+broadcast|the\s+arena|mayhem|USCW))?(?:\s*,?\s*(?:everyone|everybody|folks|fans|viewers|ladies\s+and\s+gentlemen|friends))?(?:\s+(?:at\s+home|watching\s+at\s+home))?\s*[,.!:;—–-]*\s*/i;
+const WE_BACK_RE = /\b(?:and\s+)?we(?:'|’)re\s+back|\b(?:and\s+)?we\s+are\s+back/i;
+const WE_BACK_STRIP_RE = /\b(?:and\s+)?we(?:'|’)re\s+back(?:\s+(?:live|again|on\s+the\s+air|here))?(?:\s*,?\s*(?:everyone|everybody|folks|fans|viewers))?\s*[,.!:;—–-]*\s*|\b(?:and\s+)?we\s+are\s+back(?:\s+(?:live|again|on\s+the\s+air|here))?(?:\s*,?\s*(?:everyone|everybody|folks|fans|viewers))?\s*[,.!:;—–-]*\s*/i;
+function stripCommercial(text) {
+  if (typeof text !== 'string' || !(BREAK_RE.test(text) || WELCOME_BACK_RE.test(text) || WE_BACK_RE.test(text))) return text;
+  const pm = text.match(/^([A-Z][\w'.\-]*(?:\s+[A-Z][\w'.\-]*){0,3}:\s*)([“"]?)([\s\S]*)$/);
+  const prefix = pm ? pm[1] : '', open = pm ? pm[2] : '', body = pm ? pm[3] : text;
+  const close = /[”"]\s*$/.test(body) ? body.match(/[”"]\s*$/)[0].trim() : '';
+  const sentences = body.split(/(?<=[.!?][”"]?)\s+/);
+  const kept = [];
+  for (let s of sentences) {
+    if (BREAK_RE.test(s) && !/\bbreak\s+in\s+the\s+(?:action|hold|ropes)\b/i.test(s)) continue;
+    let hit = false;
+    for (const re of [WELCOME_BACK_RE, WE_BACK_STRIP_RE]) {
+      if (re.test(s)) { hit = true; s = s.replace(re, ' '); }
+    }
+    if (hit) {
+      s = s.replace(/^[\s“"]+/, '');
+      if (/^(?:where|as|for|with|live|on|tonight|in|at|from|inside|here|and\s+(?:what|where|as))\b/i.test(s)) continue;   // a dangling clause: drop it
+      s = s.replace(/^and\s+/i, '').replace(/^[\s,]+/, '');
+      if (!s.replace(/[\s“”"'.,!?:;—–-]/g, '')) continue;
+      s = s.charAt(0).toUpperCase() + s.slice(1);
+    }
+    kept.push(s.trim());
+  }
+  let out = kept.join(' ').replace(/\s{2,}/g, ' ').trim();
+  if (!out.replace(/[\s“”"'.,!?:;—–-]/g, '')) return '';
+  if (open && !/[”"]\s*$/.test(out)) out += close || '”';
+  return (prefix + open + out).trim();
+}
+
 function aiAction(t) {
   t = typeof t === 'string' ? t.trim() : '';
   if (!t || /^[\s.1-4]+$/.test(t) && /[1-4]/.test(t)) return t;
