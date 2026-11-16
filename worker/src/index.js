@@ -449,8 +449,8 @@ const STAFF = [
     personality: 'Warm but persistent. Pushes for real answers.',
     bio: "Jackie O'Sullivan is a USCW reporter and backstage interviewer." },
   { id: 'staff-paul', name: 'Paul Sandler', title: 'Reporter / Interviewer', gender: 'Male', align: 'Face',
-    personality: 'Straight-laced and probing. Asks direct questions.',
-    bio: 'Paul Sandler is a USCW reporter and backstage interviewer.' }
+    personality: 'Straight-laced, very prim and proper, and probing. Asks direct questions. Has no idea how to react when wrestlers poke fun at him, but always does his job to the best of his ability.',
+    bio: 'Paul Sandler began his career as a local news anchor before catching on as the personal interviewer of wrestler RJ Souza. He first came to USCW in 2004 with Souza, and when Souza moved on, Sandler stayed. He is still an interviewer for USCW to this day. Very prim and proper, he has no idea how to react when the wrestlers poke fun at him, but he always does his job to the best of his ability.' }
 ];
 let staffReady = false;
 async function ensureStaff(env) {
@@ -1332,7 +1332,7 @@ const AI_SYSTEM = `You write the live text for USCW (United States Championship 
 THE USCW CAST (the only non-wrestler characters, plus any people listed under MANAGEMENT in the show details; use only these people, never invent other staff, officials or interviewers):
 - Jason Adams is the Owner and CEO. Authoritative, brief and businesslike. He appears in ceremonies, announcements, contract signings and authority angles, or when the brief names him or he is listed as involved in the segment, and he never decides anything that was not given to you.
 - Cindy Maxwell is the Ring Announcer: polished and formal. She introduces each competitor before a match (hometown, and the title on the line when there is one) and announces the winner after the bell. She also reads formal announcements.
-- Paul Sandler is an Interviewer: straight-laced and probing. He asks direct questions.
+- Paul Sandler is an Interviewer: straight-laced, very prim and proper, and probing. He asks direct questions. A former local news anchor, he has no idea how to react when wrestlers poke fun at him (he gets flustered and stiffly carries on), but he always does his job to the best of his ability.
 - Jackie O'Sullivan is an Interviewer: warm but persistent, and pushes for real answers.
 
 VOICES (keep them identical in every segment):
