@@ -159,11 +159,16 @@ function eventTeaser(e){
         matches.length ? h('div',{style:'margin-top:10px;color:var(--text)'}, matches.length+' match'+(matches.length>1?'es':'')+' announced · see the full card →') : null)));
 }
 
-function superTile(w){
+// A wrestler's own color on the profile page: red and blue alternate down the alphabetical roster, so it stays the same wherever you open it.
+function rosterColor(id){
+  const ids=Object.keys(S.wrestlers||{}).sort((a,b)=>String(S.wrestlers[a].ringName).localeCompare(String(S.wrestlers[b].ringName)));
+  const i=ids.indexOf(id); return i>=0&&i%2===0?'cR':'cB';
+}
+function superTile(w,col){
   const isChamp=champsOf(w.id).length>0;
   const bg=h('div',{class:'tile-bg'});
   if(w.image) bg.style.backgroundImage='url("'+String(w.image).replace(/"/g,'%22')+'")';
-  return h('a',{href:'#wrestler-'+w.id,class:'tile '+(w.alignment||'Tweener')},
+  return h('a',{href:'#wrestler-'+w.id,class:'tile '+(col||'cB')},
     bg,
     isChamp?h('span',{class:'tile-champ'},'★ Champion'):null,
     h('div',{class:'tile-txt'},
@@ -172,12 +177,12 @@ function superTile(w){
 }
 
 // A small wrestler card, used as the header over each match.
-function miniCard(id,full){
+function miniCard(id,full,col){
   const w=S.wrestlers[id];
-  if(!w) return h('div',{class:'tile mini Tweener unknown'+(full?' full':'')},h('div',{class:'tile-bg'}),h('div',{class:'tile-txt'},h('div',{class:'tile-name'},'TBA')));
+  if(!w) return h('div',{class:'tile mini unknown'+(full?' full':'')},h('div',{class:'tile-bg'}),h('div',{class:'tile-txt'},h('div',{class:'tile-name'},'TBA')));
   const bg=h('div',{class:'tile-bg'});
   if(w.image) bg.style.backgroundImage='url("'+String(w.image).replace(/"/g,'%22')+'")';
-  return h('a',{href:'#wrestler-'+id,class:'tile mini '+(w.alignment||'Tweener')+(full?' full':''),title:w.ringName},
+  return h('a',{href:'#wrestler-'+id,class:'tile mini '+(col||'cB')+(full?' full':''),title:w.ringName},
     bg,
     champsOf(id).length?h('span',{class:'tile-champ'},'★ Champ'):null,
     h('div',{class:'tile-txt'},h('div',{class:'tile-name'},w.ringName)));
@@ -190,7 +195,7 @@ function matchHeader(sides,anim,full){   // full = the live-show header: centere
   const out=[]; let n=0;
   const k=anim?anim.k:1;
   real.forEach((side,i)=>{
-    const cards=side.map(id=>miniCard(id,full));
+    const cards=side.map(id=>miniCard(id,full,i%2===0?'cR':'cB'));
     if(anim) cards.forEach(c=>{ c.style.animationDelay=(n++*CARD_GAP*k).toFixed(2)+'s'; });
     if(i>0){ const vs=h('div',{class:'mh-vs'},'VS'); if(anim) vs.style.animationDelay=(((n-side.length)*CARD_GAP+0.1)*k).toFixed(2)+'s'; out.push(vs); }
     out.push(h('div',{class:'mh-side'+(anim?' from-'+(i===0?'l':i===1?'r':'b'):'')},cards));
@@ -213,10 +218,10 @@ function pageSuperstars(){
   const emptyBox=h('div',{class:'empty'}, ws.length?'No superstars match your search.':'The locker room is empty. Be the first to sign a contract!');
   function draw(){
     chips.replaceChildren();
-    ['All','Face','Heel','Tweener','Champions'].forEach(k=>chips.append(h('button',{type:'button',class:'fchip'+(f===k?' on':''),onclick:()=>{f=k;draw();}},k)));
-    const list=ws.filter(w=>(f==='All'||(f==='Champions'?champsOf(w.id).length>0:w.alignment===f))&&(!q||(w.ringName+' '+(w.nickname||'')+' '+(w.hometown||'')).toLowerCase().includes(q)));
+    ['All','Development Talent','Main Roster Talent','Champions'].forEach(k=>chips.append(h('button',{type:'button',class:'fchip'+(f===k?' on':''),onclick:()=>{f=k;draw();}},k)));
+    const list=ws.filter(w=>(f==='All'||(f==='Champions'?champsOf(w.id).length>0:f==='Development Talent'?w.tier==='Development':w.tier!=='Development'))&&(!q||(w.ringName+' '+(w.nickname||'')+' '+(w.hometown||'')).toLowerCase().includes(q)));
     gridBox.replaceChildren(); emptyBox.remove();
-    if(list.length){ gridBox.style.display=''; list.forEach(w=>gridBox.append(superTile(w))); }
+    if(list.length){ gridBox.style.display=''; list.forEach((w,i)=>gridBox.append(superTile(w,i%2===0?'cR':'cB'))); }
     else { gridBox.style.display='none'; gridBox.after(emptyBox); }
   }
   wrap.append(h('div',{class:'row',style:'margin-bottom:14px'},
@@ -640,7 +645,7 @@ function pageWrestler(id){
     h('div',{style:'flex:1'}),
     canEditW(id)?h('a',{class:'btn sm',href:'#edit-'+id},'Edit'):null,
     S.isCEO?h('button',{class:'btn danger sm',onclick:()=>confirmDlg('Release '+w.ringName+'?','This permanently removes the wrestler from the roster.','Release',()=>safe(async()=>{await S.db.doc('wrestlers/'+id).delete(); navTo('superstars');},'Wrestler released.'))},'Release'):null));
-  const al=w.alignment||'Tweener';
+  const al=rosterColor(id);
   const bg=h('div',{class:'tile-bg'});
   if(w.image) bg.style.backgroundImage='url("'+String(w.image).replace(/"/g,'%22')+'")';
   const belts=champsOf(id);

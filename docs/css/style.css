@@ -162,7 +162,7 @@ textarea{min-height:90px;resize:vertical}
 /* ----- Superstars tiles ----- */
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
 .tile{position:relative;display:flex;align-items:flex-end;aspect-ratio:4/5;overflow:hidden;border-radius:8px;text-decoration:none;color:#fff;--c1:var(--navy);--c2:var(--navy2);box-shadow:0 1px 3px rgba(10,26,63,.15);transition:.15s}
-.tile.Face{--c1:#1239a8;--c2:var(--blue-lt)} .tile.Heel{--c1:var(--red2);--c2:var(--red-lt)} .tile.Tweener{--c1:var(--navy);--c2:#3b5bc4}
+.tile.cB{--c1:#1239a8;--c2:var(--blue-lt)} .tile.cR{--c1:var(--red2);--c2:var(--red-lt)}
 .tile:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(10,26,63,.25)}
 .tile-bg{position:absolute;inset:0;background-size:cover;background-position:center top;
   background-image:radial-gradient(circle at 78% 18%,rgba(255,255,255,.28) 0 2px,transparent 3px),linear-gradient(160deg,var(--c1),var(--c2))}
@@ -243,7 +243,7 @@ textarea{min-height:90px;resize:vertical}
 
 /* ----- wrestler profile card ----- */
 .wp{border:3px solid var(--navy);box-shadow:6px 6px 0 #9fb1d8;border-radius:4px;background:#fff;overflow:hidden;--ac:var(--navy)}
-.wp.Face{--ac:var(--blue)} .wp.Heel{--ac:var(--red)} .wp.Tweener{--ac:var(--navy2)}
+.wp.cB{--ac:var(--blue)} .wp.cR{--ac:var(--red)}
 .wp-top{display:grid;grid-template-columns:260px 1fr;gap:26px;padding:22px 24px;border-top:10px solid var(--ac)}
 .wp-portrait{width:100%;aspect-ratio:4/5;border-radius:6px;pointer-events:none}
 .wp-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}

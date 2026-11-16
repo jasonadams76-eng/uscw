@@ -374,8 +374,19 @@ function cleanWrestler(b, isNew, oldStyle = '') {
 }
 // Real name and move set are for the CEO and the wrestler's own player only; nobody else ever receives them.
 const isUnapproved = r => { try { const st = JSON.parse(r.data).status; return st === 'pending' || st === 'declined'; } catch (_) { return false; } };
-const wrestlerOut = (r, user) => {
-  const w = { id: r.id, ownerId: r.owner_id, ...JSON.parse(r.data) };
+// Public talent tier for the Superstars filter: a Jobber (private level) is Development Talent, everyone else is Main Roster Talent.
+// Only this two-way split is shared; the level itself stays CEO-only.
+async function tierMap(env) {
+  const m = {};
+  try {
+    await ensureStory(env);
+    const { results } = await env.DB.prepare('SELECT id, data FROM wrestler_story').all();
+    for (const r of results || []) { try { if (JSON.parse(r.data).level === 'jobber') m[r.id] = 'Development'; } catch (_) { /* ignore */ } }
+  } catch (_) { /* no story data yet: everyone is Main Roster */ }
+  return m;
+}
+const wrestlerOut = (r, user, tiers = {}) => {
+  const w = { id: r.id, ownerId: r.owner_id, ...JSON.parse(r.data), tier: tiers[r.id] || 'Main Roster' };
   const full = user && (user.isAdmin || user.id === r.id || user.id === r.owner_id);
   if (!full) { w.realName = ''; w.moves = {}; w.appearance = {}; w.style = ''; if (w.finisher) w.finisher = { name: w.finisher.name || '' }; }   // the finisher description, style and appearance are only for the AI
   return w;
@@ -389,13 +400,14 @@ async function wrestlerRoutes(request, env, id) {
       const r = await env.DB.prepare('SELECT * FROM wrestlers WHERE id = ?').bind(id).first();
       if (!r) throw new HttpError(404, 'Wrestler not found');
       if (isUnapproved(r) && !(viewer && (viewer.isAdmin || viewer.id === r.owner_id || viewer.id === r.id))) throw new HttpError(404, 'Wrestler not found');
-      return json({ wrestler: wrestlerOut(r, viewer) });
+      return json({ wrestler: wrestlerOut(r, viewer, await tierMap(env)) });
     }
     const { results } = await env.DB.prepare('SELECT * FROM wrestlers ORDER BY ring_name COLLATE NOCASE').all();
     // Applications awaiting (or refused by) the CEO are not on the roster: the CEO sees all of them, a player only their own.
     const roster = results.filter(r => !isUnapproved(r));
     const apps = results.filter(r => isUnapproved(r) && viewer && (viewer.isAdmin || viewer.id === r.owner_id || viewer.id === r.id));
-    return json({ wrestlers: roster.map(r => wrestlerOut(r, viewer)), applications: apps.map(r => wrestlerOut(r, viewer)) });
+    const tiers = await tierMap(env);
+    return json({ wrestlers: roster.map(r => wrestlerOut(r, viewer, tiers)), applications: apps.map(r => wrestlerOut(r, viewer, tiers)) });
   }
   const user = await getUser(request, env, true);
   if (!id) throw new HttpError(404, 'Not found');
