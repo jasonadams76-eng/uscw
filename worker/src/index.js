@@ -1250,6 +1250,13 @@ VOICES (keep them identical in every segment):
 - Earl Backwater is the color commentator: a shameless heel sympathizer. He cheers the villains, can't stand the fan favorites, makes excuses for cheating and constantly argues with Mike about which wrestlers he likes and dislikes.
 - Mike and Earl are the only commentators; the cast above never does commentary.
 
+CROWD REACTIONS (firm rule; the live crowd always behaves like this, and every segment follows it):
+- A Face (fan favorite) is cheered by the crowd. A Heel (villain) is booed by the crowd. A Tweener gets a mixed reaction that depends on the opponent: cheered against a Heel, booed against a Face; against another Tweener the crowd is split and can't make up its mind, and Mike or Earl may joke about it.
+- When a Heel faces only Heels, nobody is booed: the fans stop booing and simply cheer big moves by either man. When Faces face only Faces, the crowd cheers both.
+- Each segment may carry a "CROWD REACTION" line worked out for that exact line-up. Follow it exactly: it says who is cheered, who is booed and who splits the crowd.
+- Show it through the crowd's behavior (cheers, a pop, boos, jeers, a chant, a split crowd) in the action lines and in how Mike and Earl describe the building. Use the crowd_pop / crowd_pop_big cue for a cheered wrestler's entrance or big moment and crowd_boo for a booed wrestler's, and never use crowd_boo for a wrestler the crowd is cheering. Never write the words face, heel or tweener on air; say fan favorite, villain or crowd favorite instead.
+- Earl's bias does not change what the crowd does: he may cheer a booed heel while the crowd boos.
+
 RULES:
 - Use only the facts you are given. Do not invent championships, results, injuries, family members or backstories. All wrestlers are fictional. A match with no title listed in its details has no title on the line: never describe it as a title match, never have the referee or announcers refer to championship implications, and never put a belt in the ring for it.
 - The show runs straight through with NO commercial breaks. Never write "welcome back", "we're back", "back from the break", "after the break" or anything that implies the broadcast was away. When a new segment starts, the announcers simply carry on and move straight into it (introduce the next match, react to what just happened, or cut to the next scene).
@@ -1302,6 +1309,35 @@ function levelGuide(b, nameOf) {
   }
   return lines.join('\n');
 }
+// Crowd reaction for a line-up, worked out from each wrestler's alignment (Face / Heel / Tweener) and the opposition.
+function crowdGuide(b, nameOf) {
+  const seg = b.segment || {}, al = b.align || {};
+  const kindOf = id => (al[id] === 'Face' || al[id] === 'Heel') ? al[id] : 'Tweener';
+  const sides = (seg.sides || []).filter(s => s && s.length);
+  const all = sides.flat();
+  if (!all.length) return '';
+  const lines = [];
+  const solo = sides.length < 2;
+  for (let i = 0; i < sides.length; i++) {
+    const opp = solo ? [] : sides.filter((_, j) => j !== i).flat();
+    const heels = opp.filter(x => kindOf(x) === 'Heel').length, faces = opp.filter(x => kindOf(x) === 'Face').length;
+    for (const id of sides[i]) {
+      const k = kindOf(id), n = nameOf(id);
+      if (k === 'Face') lines.push(`${n}: cheered by the crowd`);
+      else if (k === 'Heel') lines.push(opp.length && heels === opp.length ? `${n}: NOT booed in this match (only heels in the ring), the fans cheer ${n}'s big moves` : `${n}: booed by the crowd`);
+      else if (solo) lines.push(`${n}: mixed reaction, some cheer and some boo`);
+      else if (heels > faces) lines.push(`${n}: cheered by the crowd (the opposition is the bigger villain)`);
+      else if (faces > heels) lines.push(`${n}: booed by the crowd (the opposition is the fan favorite)`);
+      else if (heels === 0) lines.push(`${n}: the crowd is split and can't make up its mind (a Tweener against a Tweener); let Mike or Earl joke about it`);
+      else lines.push(`${n}: mixed reaction, the crowd is divided`);
+    }
+  }
+  let extra = '';
+  if (!solo && all.every(id => kindOf(id) === 'Heel')) extra = '\nEvery wrestler in this match is a villain, so there are no boos at all: the fans just cheer the big moves by either side (use crowd_pop on big moves, never crowd_boo).';
+  else if (!solo && all.every(id => kindOf(id) === 'Face')) extra = '\nEvery wrestler in this match is a fan favorite, so the crowd cheers both sides.';
+  return `CROWD REACTION (firm rule, worked out from the line-up; follow it exactly and never say face, heel or tweener on air):\n${lines.map(x => '- ' + x).join('\n')}${extra}`;
+}
+
 function aiPrompt(b, profiles, nameOf) {
   const show = b.show, seg = b.segment;
   const sideNames = side => side.map(nameOf).join(' & ');
@@ -1313,6 +1349,7 @@ function aiPrompt(b, profiles, nameOf) {
     b.champions.length ? `CURRENT CHAMPIONS: ${b.champions.join('; ')}.` : '',
     profiles ? `WRESTLERS:\n${profiles}` : '',
     levelGuide(b, nameOf),
+    crowdGuide(b, nameOf),
     b.meetings && b.meetings.length ? `PREVIOUS MEETINGS BETWEEN THESE COMPETITORS (true history, newest first). The announcers may mention it naturally while previewing and calling the match, for example who won last time or how many times they have met; never invent any other history:\n${b.meetings.map(t => '- ' + t).join('\n')}` : '',
     b.earlier.length ? `EARLIER IN TONIGHT'S SHOW (the announcers may refer back to these; do not retell them):\n${b.earlier.map(t => '- ' + t).join('\n')}` : ''
   ].filter(Boolean).join('\n\n');
@@ -1450,6 +1487,7 @@ async function aiDraft(request, env) {
   }
   const names = {}; for (const r of rows) { try { names[r.id] = JSON.parse(r.data).ringName; } catch (_) { /* skip */ } }
   const nameOf = id => names[id] || 'Unknown Wrestler';
+  b.align = {}; for (const r of rows) { try { b.align[r.id] = JSON.parse(r.data).alignment || ''; } catch (_) { /* skip */ } }
   const profiles = rows.map(r => { try { return aiProfile(r, facts, b.levels); } catch (_) { return ''; } }).filter(Boolean).join('\n');
   b.meetings = []; b.card.meet = [];
   try {

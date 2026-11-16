@@ -271,6 +271,16 @@ The show has no commercial breaks, so the AI is told never to write "welcome bac
 
 - AI-only details: the finisher description ("How it looks"), wrestling style and the Appearance section (physical appearance and ring gear) are only used by the AI. They are not shown on the profile, and the Worker leaves them out of the data sent to anyone but the owner and the CEO (same rule as the move list). The finisher's name is still shown. They remain in the edit form, and the CEO's application inbox still shows them for review. Alignment (Face, Heel, Tweener) is not shown anywhere on the site, but it is still saved and the AI writers use it (crowd reactions, promos, how the announcers treat each wrestler).
 
+## Crowd reactions follow alignment
+The AI writer has a firm rule, and each match or segment also gets a worked-out `CROWD REACTION` line (made in the Worker by `crowdGuide` in `worker/src/index.js`, from each wrestler's alignment and the opposition):
+- Face: cheered. Heel: booed.
+- Tweener: cheered against a Heel, booed against a Face. In a three-way or tag match the opposition's Heels are counted against its Faces (more Heels: cheered; more Faces: booed; level: divided).
+- Tweener against Tweener: the crowd is split and can't make up its mind, and Mike or Earl may joke about it.
+- Heel against only Heels: nobody is booed; the fans cheer big moves by either (crowd_pop on big moves, never crowd_boo). Face against only Faces: the crowd cheers both.
+- A promo or other segment with one wrestler: Face cheered, Heel booed, Tweener mixed.
+- The announcers never say face, heel or tweener on air. Cues: crowd_pop or crowd_pop_big for a cheered wrestler, crowd_boo for a booed one. Earl's heel bias is his own and does not change what the crowd does.
+- A wrestler with no alignment set is treated as a Tweener. To change the rule, edit the CROWD REACTIONS block in `AI_SYSTEM` and `crowdGuide`.
+
 ## Tile colors and Superstars filters
 - Tile colors no longer depend on alignment. On the Superstars page the tiles alternate red, blue, red, blue in the order shown (so the pattern holds after filtering). On a match card the first side is red, the next blue, and a third side red again; wrestlers on the same side share a color. A profile page uses the wrestler's place in the alphabetical roster (red, blue, red…), so it never changes.
 - Filters: All, Development Talent, Main Roster Talent, Champions. A wrestler whose private Level is Jobber is Development Talent; everyone else (including wrestlers with no level yet) is Main Roster Talent. The Worker adds a public `tier` field (`Development` or `Main Roster`) to each wrestler for this. Only that two-way split is shared; the actual level stays CEO-only. Changing a level shows up in the filter the next time the page loads the roster.
