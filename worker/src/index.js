@@ -430,6 +430,42 @@ const wrestlerOut = (r, user, tiers = {}) => {
   return w;
 };
 
+// The USCW broadcast and front-office staff. They are created once, in this order, and the CEO fills in their profiles.
+// Only the CEO (Jason Adams) can be added to a segment; the rest are always part of the broadcast.
+const STAFF = [
+  { id: 'staff-jason', name: 'Jason Adams', title: 'CEO', gender: 'Male', align: 'Face', pickable: true,
+    personality: 'The owner and CEO of USCW. Authoritative, brief and businesslike. He makes announcements and takes part in contract signings and authority angles, and never decides anything that was not given to him.',
+    bio: 'Jason Adams is the Owner and CEO of United States Championship Wrestling.' },
+  { id: 'staff-mike', name: 'Mike Johnson', title: 'Lead Announcer', gender: 'Male', align: 'Face',
+    personality: 'Professional, precise, technical and serious. Names every move correctly, tries to stay impartial and gets exasperated with Earl.',
+    bio: 'Mike Johnson is the lead play-by-play announcer for Monday Night Mayhem and every USCW premium live event.' },
+  { id: 'staff-earl', name: 'Earl Backwater', title: 'Color Commentator', gender: 'Male', align: 'Heel',
+    personality: 'A shameless heel sympathizer who cheers the villains and cannot stand the fan favorites. Makes excuses for cheating and constantly argues with Mike.',
+    bio: 'Earl Backwater is the color commentator alongside Mike Johnson, and never shy about whose side he is on.' },
+  { id: 'staff-cindy', name: 'Cindy Maxwell', title: 'Ring Announcer', gender: 'Female', align: 'Face',
+    personality: 'Polished and formal. Introduces each competitor and announces the winner after the bell.',
+    bio: 'Cindy Maxwell is the ring announcer for USCW. She introduces every competitor and announces every winner.' },
+  { id: 'staff-jackie', name: "Jackie O'Sullivan", title: 'Reporter / Interviewer', gender: 'Female', align: 'Face',
+    personality: 'Warm but persistent. Pushes for real answers.',
+    bio: "Jackie O'Sullivan is a USCW reporter and backstage interviewer." },
+  { id: 'staff-paul', name: 'Paul Sandler', title: 'Reporter / Interviewer', gender: 'Male', align: 'Face',
+    personality: 'Straight-laced and probing. Asks direct questions.',
+    bio: 'Paul Sandler is a USCW reporter and backstage interviewer.' }
+];
+let staffReady = false;
+async function ensureStaff(env) {
+  if (staffReady) return;
+  const now = Date.now();
+  const stmts = STAFF.map((x, i) => {
+    const data = { role: 'authority', staff: true, staffOrder: i + 1, pickable: !!x.pickable, title: x.title, personality: x.personality,
+      ringName: x.name, nickname: '', realName: '', age: '', hometown: '', height: '', weight: '', alignment: x.align, bio: x.bio, theme: '',
+      gender: x.gender, appearance: { look: '', gear: '' }, formerWrestler: false, wrestledAs: '', style: '', moves: {}, finisher: { name: '', desc: '' } };
+    return env.DB.prepare('INSERT OR IGNORE INTO wrestlers (id, owner_id, ring_name, data, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, ?)').bind(x.id, x.name, JSON.stringify(data), now, now);
+  });
+  await env.DB.batch(stmts);
+  staffReady = true;
+}
+
 async function wrestlerRoutes(request, env, id) {
   const method = request.method;
   if (method === 'GET') {
@@ -440,6 +476,7 @@ async function wrestlerRoutes(request, env, id) {
       if (isUnapproved(r) && !(viewer && (viewer.isAdmin || viewer.id === r.owner_id || viewer.id === r.id))) throw new HttpError(404, 'Wrestler not found');
       return json({ wrestler: wrestlerOut(r, viewer, await tierMap(env)) });
     }
+    try { await ensureStaff(env); } catch (_) { /* the staff list fills in on the next load */ }
     const { results } = await env.DB.prepare('SELECT * FROM wrestlers ORDER BY ring_name COLLATE NOCASE').all();
     // Applications awaiting (or refused by) the CEO are not on the roster: the CEO sees all of them, a player only their own.
     const roster = results.filter(r => !isUnapproved(r));
@@ -462,7 +499,9 @@ async function wrestlerRoutes(request, env, id) {
     if (wantsAuthority && existing && oldRole !== 'authority') throw new HttpError(400, 'A wrestler cannot be turned into an authority figure. Create a new character instead.');
     const data = wantsAuthority ? cleanAuthority(inBody, !existing) : cleanWrestler(inBody, !existing, oldStyle);
     // New player applications wait for the CEO. Edits keep the current status; a refused application goes back to pending when its owner revises it.
-    if (data.role === 'authority') { /* the CEO's own character: never pending */ }
+    if (data.role === 'authority') {   // the CEO's own character: never pending; core staff keep their order and picker flag
+      if (existing) { try { const o = JSON.parse(existing.data); if (o.staff) { data.staff = true; data.staffOrder = o.staffOrder || 99; data.pickable = !!o.pickable; } else if (o.pickable === false) data.pickable = false; } catch (_) { /* ignore */ } }
+    }
     else if (!existing) { if (!user.isAdmin) data.status = 'pending'; }
     else {
       let old = {}; try { old = JSON.parse(existing.data); } catch (_) { /* ignore */ }
@@ -478,6 +517,7 @@ async function wrestlerRoutes(request, env, id) {
   }
   if (method === 'DELETE') {
     if (!user.isAdmin) throw new HttpError(403, 'Only the CEO can release a wrestler.');
+    if (/^staff-/.test(id)) throw new HttpError(400, 'Core staff cannot be released.');
     const { results: titles } = await env.DB.prepare('SELECT id, holders FROM championships').all();
     await ensureStory(env); await ensureSubs(env);
     const stmts = [env.DB.prepare('DELETE FROM wrestlers WHERE id = ?').bind(id), env.DB.prepare('DELETE FROM wrestler_story WHERE id = ?').bind(id), env.DB.prepare('DELETE FROM submissions WHERE wrestler_id = ?').bind(id)];
@@ -1290,7 +1330,7 @@ const AI_CUES = ['intro_music', 'bell', 'pyro', 'crowd_pop', 'crowd_pop_big', 'c
 const AI_SYSTEM = `You write the live text for USCW (United States Championship Wrestling), a fictional wrestling league's weekly TV show "Monday Night Mayhem" and its premium live events. Viewers read the text a few lines at a time, like a live broadcast.
 
 THE USCW CAST (the only non-wrestler characters, plus any people listed under MANAGEMENT in the show details; use only these people, never invent other staff, officials or interviewers):
-- Jason Adams is the Owner and CEO. Authoritative, brief and businesslike. He appears only in ceremonies, announcements and authority angles, or when the brief names him, and never decides anything that was not given to you.
+- Jason Adams is the Owner and CEO. Authoritative, brief and businesslike. He appears in ceremonies, announcements, contract signings and authority angles, or when the brief names him or he is listed as involved in the segment, and he never decides anything that was not given to you.
 - Cindy Maxwell is the Ring Announcer: polished and formal. She introduces each competitor before a match (hometown, and the title on the line when there is one) and announces the winner after the bell. She also reads formal announcements.
 - Paul Sandler is an Interviewer: straight-laced and probing. He asks direct questions.
 - Jackie O'Sullivan is an Interviewer: warm but persistent, and pushes for real answers.
@@ -1564,7 +1604,7 @@ async function aiDraft(request, env) {
   b.authority = {}; b.management = [];
   try {
     const { results: all } = await env.DB.prepare('SELECT id, data FROM wrestlers').all();
-    for (const r of all || []) { try { const w = JSON.parse(r.data); if (w.role === 'authority') { b.authority[r.id] = true; if (!isUnapproved(r)) b.management.push(`${w.ringName}, ${w.title || 'authority figure'}`); } } catch (_) { /* skip */ } }
+    for (const r of all || []) { try { const w = JSON.parse(r.data); if (w.role === 'authority') { b.authority[r.id] = true; if (!w.staff && !isUnapproved(r)) b.management.push(`${w.ringName}, ${w.title || 'authority figure'}`); } } catch (_) { /* skip */ } }
   } catch (_) { /* none */ }
   const profiles = rows.map(r => { try { return aiProfile(r, facts, b.levels); } catch (_) { return ''; } }).filter(Boolean).join('\n');
   b.meetings = []; b.card.meet = [];

@@ -312,3 +312,9 @@ The CEO Office has a **+ Add Authority Figure** button next to the NPC button. A
 - **Rules:** they can be added to promo, backstage, angle, ceremony and other non-match segments, but not to match sides, and they cannot hold a title (the Worker refuses).
 - **AI:** every show's details list all authority figures (`MANAGEMENT`), and a figure's full profile (personality, bio, attire, wrestling past) is sent only when they are in the segment. The AI is told they speak only when the brief names them or they are listed as involved, never do commentary and never win or lose. Crowd reaction follows their alignment (`crowdGuide`).
 - Code: `cleanAuthority`, `aiProfile`, `crowdGuide` in `worker/src/index.js`; `pageEditAuthority`, `isAuth` in `docs/js/app.js`.
+
+### Staff page
+The **Staff** menu item (`#staff`) lists everyone in a non-wrestling role: the six core staff first (CEO Jason Adams, Mike Johnson, Earl Backwater, Cindy Maxwell, Jackie O'Sullivan, Paul Sandler), then a **Management** section with every authority figure the CEO creates. The Management section is no longer on the Superstars page.
+- The six are created automatically the first time the roster loads (`STAFF` / `ensureStaff` in `worker/src/index.js`, `INSERT OR IGNORE`, ids `staff-jason`, `staff-mike`, ...). They are authority records with `staff: true`, `staffOrder` and `pickable`. The CEO fills in bios, looks and portraits from each profile (Edit). Core staff cannot be released.
+- Only Jason Adams is `pickable`: he can be added to promo, backstage, angle, ceremony and other non-match segments (contract signings, announcements). The AI then gets his profile and may have him speak. The others stay part of the broadcast, are never in the picker, and keep their existing AI voices (their records are for the site only).
+- Default alignment is Face for the CEO (change it on his profile); it drives the crowd reaction when he comes out.
