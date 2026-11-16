@@ -23,7 +23,7 @@ const S = {
   wrestlers:{}, apps:{}, events:{}, champs:[], story:{}, loadedW:false, loadedE:false, failed:false, editing:false, draft:null
 };
 
-const pleLogo=i=>'img/ple/ple-'+String(i+1).padStart(2,'0')+'.webp';
+const pleLogo=i=>'img/ple/ple-'+String(i+1).padStart(2,'0')+'.webp?v='+(window.USCW_VERSION||'');
 const pleIdx=e=>(e&&e.ple&&e.date)?Number(e.date.slice(5,7))-1:-1;
 const evImg=(e,cls)=>{ if(!e) return null; const i=pleIdx(e); return i>=0?pleImg(i,cls,e.title):h('img',{class:cls+' mayhem-logo',src:'img/mayhem.webp',alt:e.title||'Monday Night Mayhem',loading:'lazy'}); };
 const pleImg=(i,cls,name)=>(i>=0&&i<12)?h('img',{class:cls,src:pleLogo(i),alt:name||'',loading:'lazy'}):null;
