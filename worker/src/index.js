@@ -377,7 +377,7 @@ const isUnapproved = r => { try { const st = JSON.parse(r.data).status; return s
 const wrestlerOut = (r, user) => {
   const w = { id: r.id, ownerId: r.owner_id, ...JSON.parse(r.data) };
   const full = user && (user.isAdmin || user.id === r.id || user.id === r.owner_id);
-  if (!full) { w.realName = ''; w.moves = {}; if (w.finisher) w.finisher = { name: w.finisher.name || '' }; }   // the finisher's description is only for the AI
+  if (!full) { w.realName = ''; w.moves = {}; w.appearance = {}; w.style = ''; if (w.finisher) w.finisher = { name: w.finisher.name || '' }; }   // the finisher description, style and appearance are only for the AI
   return w;
 };
 
