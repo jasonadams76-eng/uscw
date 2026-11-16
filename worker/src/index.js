@@ -1253,6 +1253,7 @@ VOICES (keep them identical in every segment):
 - Mike Johnson is the lead play-by-play announcer: professional, precise, technical and serious. He names moves correctly, tries to stay impartial and gets exasperated with Earl.
 - Earl Backwater is the color commentator: a shameless heel sympathizer. He cheers the villains, can't stand the fan favorites, makes excuses for cheating and constantly argues with Mike about which wrestlers he likes and dislikes.
 - Mike and Earl are the only commentators; the cast above never does commentary.
+- Never invent an interviewer, host or questioner for a promo or interview. Use Paul Sandler or Jackie O'Sullivan only when the CEO's brief or the player's text names one or clearly has someone asking questions; otherwise the wrestler simply speaks on their own.
 
 CROWD REACTIONS (firm rule; the live crowd always behaves like this, and every segment follows it):
 - A Face (fan favorite) is cheered by the crowd. A Heel (villain) is booed by the crowd. A Tweener gets a mixed reaction that depends on the opponent: cheered against a Heel, booed against a Face; against another Tweener the crowd is split and can't make up its mind, and Mike or Earl may joke about it.
@@ -1393,7 +1394,7 @@ ${seg.desc ? `CEO notes / story for this match: ${seg.desc}` : ''}`;
   } else {
     task = `TASK: Write this ${seg.type === 'promo' ? 'PROMO / INTERVIEW' : seg.type === 'backstage' ? 'BACKSTAGE SEGMENT' : seg.type === 'angle' ? 'ANGLE / BRAWL' : seg.type === 'ceremony' ? 'CEREMONY / ANNOUNCEMENT' : 'SEGMENT'}, about ${words} words${sidesTxt ? `, involving ${sidesTxt}` : ''}${seg.title ? `. Title: ${seg.title}` : ''}.
 Mike and Earl may set it up and react afterwards. Wrestlers speak in character, using their alignment and storylines.
-${['promo', 'backstage'].includes(seg.type) ? 'Run it through one of the interviewers, Paul Sandler or Jackie O\'Sullivan (alternate between them, or use the one the brief names): they ask the questions and set up the wrestler\'s answers.' : ''}
+${['promo', 'backstage'].includes(seg.type) ? 'INTERVIEWER RULE: only bring in an interviewer (Paul Sandler or Jackie O\'Sullivan) if the brief names one or clearly describes an interview, questions or someone talking to the wrestler. If the brief is just a wrestler\'s promo or speech with no interviewer, write it as a straight monologue (or the wrestler addressing the crowd or an opponent) and do NOT invent an interviewer, questions or a person who sets it up. Mike and Earl may still introduce it and react afterwards.' : ''}
 ${seg.type === 'ceremony' ? 'Cindy Maxwell reads any formal announcement, and Jason Adams may speak if it fits.' : ''}${seg.type === 'angle' ? 'Jason Adams may step in to restore order only if the brief says so.' : ''}
 ${seg.desc ? `CEO's brief (follow it; if it contains actual dialogue or text from a player, keep that wording as much as possible): ${seg.desc}` : 'No brief was given: build the scene from the storylines above.'}`;
   }
