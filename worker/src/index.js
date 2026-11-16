@@ -576,33 +576,41 @@ async function portraitGenerate(request, env) {
     }
   }
   const refund = () => user.isAdmin ? null : env.DB.prepare('UPDATE portrait_gen SET last_at = ? WHERE user_id = ?').bind(prev, user.id).run();
-  const model = env.GEMINI_MODEL_IMAGE || 'gemini-3.1-flash-image';
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 70000);
-  let res, data;
-  try {
-    res = await fetch(`${env.GEMINI_BASE_URL || GEMINI_BASE}${encodeURIComponent(model)}:generateContent`, {
-      method: 'POST', signal: ctl.signal,
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: IMAGE_PROMPT(look, gear, gender, height, weight) }] }],
-        generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '9:16' } }
-      })
-    });
-    data = await res.json().catch(() => ({}));
-  } catch (e) {
-    await refund();
-    throw new HttpError(504, 'The image service took too long. Try again in a moment.');
-  } finally { clearTimeout(timer); }
-  let img = null;
-  for (const c of (data.candidates || [])) for (const p of ((c.content || {}).parts || [])) {
-    const d = p.inlineData || p.inline_data;
-    if (d && d.data) { img = { data: d.data, mime: d.mimeType || d.mime_type || 'image/png' }; break; }
+  // If the first model name is not found (404), try the preview name once.
+  const models = [env.GEMINI_MODEL_IMAGE || 'gemini-3.1-flash-image'];
+  if (!env.GEMINI_MODEL_IMAGE) models.push('gemini-3.1-flash-image-preview');
+  let res, data, img = null;
+  for (const model of models) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 70000);
+    try {
+      res = await fetch(`${env.GEMINI_BASE_URL || GEMINI_BASE}${encodeURIComponent(model)}:generateContent`, {
+        method: 'POST', signal: ctl.signal,
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: IMAGE_PROMPT(look, gear, gender, height, weight) }] }],
+          generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '9:16' } }
+        })
+      });
+      data = await res.json().catch(() => ({}));
+    } catch (e) {
+      await refund();
+      throw new HttpError(504, 'The image service took too long. Try again in a moment.');
+    } finally { clearTimeout(timer); }
+    img = null;
+    for (const c of (data.candidates || [])) for (const p of ((c.content || {}).parts || [])) {
+      const d = p.inlineData || p.inline_data;
+      if (d && d.data) { img = { data: d.data, mime: d.mimeType || d.mime_type || 'image/png' }; break; }
+    }
+    if (img || res.status !== 404) break;
   }
   if (!res.ok || !img) {
     await refund();      // nothing came back, so it does not use up their one try
-    if (res.ok || res.status === 400) throw new HttpError(422, 'The image service could not make a picture from that description. Adjust the appearance or ring gear and try again.');
-    throw new HttpError(502, 'The image service had a problem. Try again in a moment.');
+    const why = (data && data.error && data.error.message) || (data && data.promptFeedback && data.promptFeedback.blockReason) || ((data.candidates || [])[0] || {}).finishReason || '';
+    console.log('image gen failed', res.status, String(why).slice(0, 300));
+    const detail = user.isAdmin ? ` (Google said ${res.status}: ${String(why).replace(/\s+/g, ' ').slice(0, 220) || 'no message'})` : '';
+    if (res.ok || res.status === 400) throw new HttpError(422, 'The image service could not make a picture from that description. Adjust the appearance or ring gear and try again.' + detail);
+    throw new HttpError(502, 'The image service had a problem. Try again in a moment.' + detail);
   }
   return json({ image: img.data, mime: img.mime, nextAt: user.isAdmin ? 0 : now + IMAGE_COOLDOWN_MS });
 }
