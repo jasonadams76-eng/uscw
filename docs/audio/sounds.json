@@ -16,7 +16,10 @@
     "hardbody harrison": "entrance-hardbody.mp3",
     "paco rodriguez": "entrance-paco.mp3",
     "sweardog mckraken": "entrance-sweardog.mp3",
-    "sweardog mckracken": "entrance-sweardog.mp3"
+    "sweardog mckracken": "entrance-sweardog.mp3",
+    "iron mike sharpe": "entrance-sharpe.mp3",
+    "mr wrestling": "entrance-mrwrestling.mp3",
+    "mr wrestling ii": "entrance-mrwrestling.mp3"
   },
   "defaultEntrance": "",
   "ambient": "crowd.mp3"

@@ -190,7 +190,7 @@ Run `node tools/stamp.js` before each commit that changes anything in `docs/` â€
 
 ## Wrestler portraits and entrance themes
 - Portraits: put an image in `docs/img/wrestlers/` and add `"ring name lower case": "file.webp"` to `images.json`. Shown on Superstars tiles, champion cards and match headers.
-- Entrance themes: `docs/audio/sounds.json` `entrances` maps a lower-case ring name (or wrestler id) to a ~60 s clip. Current themes: Hardbody Harrison, Paco Rodriguez and Sweardog McKraken (the first 60 s of his song, no fade-in, 3 s fade-out; `entrance-sweardog.mp3`).
+- Entrance themes: `docs/audio/sounds.json` `entrances` maps a lower-case ring name (or wrestler id) to a ~60 s clip. Current themes: Hardbody Harrison, Paco Rodriguez and Sweardog McKraken (the first 60 s of his song, no fade-in, 3 s fade-out; `entrance-sweardog.mp3`). "Iron" Mike Sharpe (`entrance-sharpe.mp3`) and Mr. Wrestling plus Mr. Wrestling II, who share one clip (`entrance-mrwrestling.mp3`, started where the music starts because the original had 2.4 s of silence). Sharpe's and Mr. Wrestling's clips were volume-matched to the other themes (about âˆ’16 LUFS).
 
 ## Winner and promo themes
 - When a match has a winner, that wrestler's theme plays at the winner announcement (the last beat that names a winner) and runs to the end of its clip. It stops early only when other music starts or the next segment begins.
