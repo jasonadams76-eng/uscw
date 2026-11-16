@@ -119,7 +119,7 @@ npx serve docs -p 8080               # http://localhost:8080
 | `GET /api/events/:id/script?view=…&after=N` | the viewer who started it | the script beats whose time has come, with their segment headers. Nothing is ever sent ahead of the viewer's own clock |
 | `GET /api/story`, `PUT /api/story/:id` | CEO only | each wrestler's recent results, feuds and show notes (stored in the `wrestler_story` table, created automatically). Never sent to anyone but the CEO |
 | `POST /api/ai/draft` | CEO only | write a segment, polish the intro, via Gemini (see the AI writer section) |
-| `GET/POST /api/submissions` | signed in | Superstar Hub: a player lists/creates their own pitches (max 3 pending); the CEO sees all |
+| `GET/POST /api/submissions` | signed in | Superstar Hub: a player lists/creates their own pitches (max 3 pending, up to 12,000 characters each, the same limit as "What happens"); the CEO sees all |
 | `PUT/DELETE /api/submissions/:id` | owner (pending only) / CEO | edit or withdraw; the CEO sets status and reply note |
 | `POST /api/submissions/seen` | CEO only | clear the unseen badge |
 | `GET /api/championships` | anyone | the three titles and their champions |

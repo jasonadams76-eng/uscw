@@ -1154,7 +1154,7 @@ function ensureSubs(env) {
 }
 const SUB_TYPES = ['promo', 'backstage', 'angle', 'other'];
 const SUB_STATUS = ['pending', 'approved', 'declined', 'used'];
-const MAX_OPEN_SUBS = 3, MAX_SUB_BODY = 4000;
+const MAX_OPEN_SUBS = 3, MAX_SUB_BODY = MAX_DESC_CHARS;
 const subOut = r => ({
   id: r.id, wrestlerId: r.wrestler_id, type: r.type, title: r.title, mode: r.mode, body: r.body,
   involved: JSON.parse(r.involved || '[]'), eventId: r.event_id, status: r.status, seen: !!r.seen,

@@ -1285,7 +1285,7 @@ function pageHub(){
           Object.entries(S.wrestlers).filter(([id])=>id!==S.uid&&!F.involved.includes(id)).sort((a,b)=>a[1].ringName.localeCompare(b[1].ringName)).map(([id,w])=>h('option',{value:id},w.ringName))));
     }
     drawChips();
-    const bodyIn=h('textarea',{rows:'8',maxlength:'4000',placeholder:F.mode==='idea'?'Describe what you’d like to happen: who is involved, what is said or done, how it fits your storyline…':'Write the exact text you want used: dialogue, narration, anything. The CEO may edit it.',oninput:e=>{F.body=e.target.value;}},F.body);
+    const bodyIn=h('textarea',{rows:'8',maxlength:'12000',placeholder:F.mode==='idea'?'Describe what you’d like to happen: who is involved, what is said or done, how it fits your storyline…':'Write the exact text you want used: dialogue, narration, anything. The CEO may edit it.',oninput:e=>{F.body=e.target.value;}},F.body);
     formBox.append(h('div',{class:'card'},
       h('h3',{style:'margin:0 0 8px'},editId?'Edit your submission':'Pitch a segment'),
       full?h('div',{class:'notice'},'You have '+MAX_OPEN_SUBS+' submissions waiting for the CEO. Wait for a response or withdraw one below before sending another.'):null,
@@ -1565,11 +1565,13 @@ function subInbox(){
 // Turn an approved submission into a segment in the event being edited.
 function segFromSub(x){
   const paras=x.mode==='text'?((S.polished&&S.polished[x.id])||x.body).split(/\n\s*\n/).map(t=>t.trim()).filter(Boolean):[];
-  const beats=paras.map(t=>({text:t.slice(0,1200),pause:0,cue:''}));
+  // A long paragraph is split at sentence ends so nothing is cut off at 1,200 characters.
+  const chunk=t=>{ const out=[]; while(t.length>1200){ let i=t.lastIndexOf('. ',1200); if(i<400) i=t.lastIndexOf(' ',1200); if(i<1) i=1200; out.push(t.slice(0,i+1).trim()); t=t.slice(i+1).trim(); } if(t) out.push(t); return out; };
+  const beats=paras.flatMap(chunk).map(t=>({text:t,pause:0,cue:''}));
   const words=beats.reduce((n,b)=>n+wordCount(b.text),0);
   const sides=[[x.wrestlerId,...x.involved].filter(w=>S.wrestlers[w])];
   return {id:uid8(),type:x.type,title:x.title||'',stip:'',sub:x.id,
-    desc:x.mode==='idea'?'Player idea from '+wname(x.wrestlerId)+': '+x.body:'Text submitted by '+wname(x.wrestlerId)+' (edit as needed).',
+    desc:x.mode==='idea'?('Player idea from '+wname(x.wrestlerId)+': '+x.body).slice(0,12000):'Text submitted by '+wname(x.wrestlerId)+' (edit as needed).',
     sides,length:beats.length?Math.max(1,Math.min(30,Math.ceil(words/WORDS_PER_MIN))):defLength(x.type),beats,result:{winner:null,finish:''}};
 }
 
