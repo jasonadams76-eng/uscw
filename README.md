@@ -269,6 +269,8 @@ Every segment on the Show Card (CEO Office → edit event) has a ▾/▸ button.
 ## No commercial breaks
 The show has no commercial breaks, so the AI is told never to write "welcome back", "we're back" or "after the break" at the start of a segment; the announcers just carry on and go straight into the next segment. This is a Worker prompt change, so it applies to scripts generated after the Worker is redeployed. Scripts already written keep their text.
 
+- Finisher description ("How it looks"): only used by the AI when it writes the match. It is not shown on the profile, and the Worker leaves it out of the data sent to anyone but the owner and the CEO (same rule as the move list). The finisher's name is still shown.
+
 ## How an entrance theme is found
 A theme is matched by wrestler id first, then by ring name. The ring-name match ignores case, quotes and punctuation, and allows extra words around the name (so a key of `sweardog mckraken` also matches “Sweardog McKraken Jr.”). The manifest lists Sweardog under both spellings, McKraken and McKracken. If a theme still doesn't play, the key in `docs/audio/sounds.json` doesn't match the wrestler's exact ring name or id: add a line for it.
 

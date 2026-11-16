@@ -662,8 +662,7 @@ function pageWrestler(id){
           stat('Age',w.age), stat('Entrance theme',w.theme)))),
     w.finisher&&w.finisher.name?h('div',{class:'wp-band'},
       h('div',{class:'cond wp-band-l'},'Finishing move'),
-      h('div',{class:'wp-fin'},w.finisher.name),
-      w.finisher.desc?h('div',{class:'wp-fin-d'},w.finisher.desc):null):null,
+      h('div',{class:'wp-fin'},w.finisher.name)):null,
     w.bio?h('div',{class:'wp-body'},h('h2',{},'Biography'),h('div',{class:'bio'},w.bio)):null,
     (w.appearance&&(w.appearance.look||w.appearance.gear))?h('div',{class:'wp-body'},h('h2',{},'Appearance'),
       w.appearance.look?h('div',{class:'bio'},w.appearance.look):null,
@@ -823,7 +822,7 @@ function pageEditWrestler(id, isNew){
     h('div',{class:'sect-h',style:'margin-top:20px'},h('h2',{style:'color:var(--red)'},'Finishing Move')),
     h('div',{class:'cols'},
       h('div',{class:'f'},h('label',{class:'l'},'Finisher name *'),F.finName=h('input',{type:'text',value:fin.name||'',placeholder:'e.g. The Iron Curtain',maxlength:'120'})),
-      h('div',{class:'f'},h('label',{class:'l'},'How it looks *'),F.finDesc=h('textarea',{style:'min-height:60px',placeholder:'Describe the move'},fin.desc||''))),
+      h('div',{class:'f'},h('label',{class:'l'},'How it looks *'),F.finDesc=h('textarea',{style:'min-height:60px',placeholder:'Describe the move'},fin.desc||''),h('div',{class:'hint'},'Only used to help the AI describe the move. It is never shown on the site.'))),
     h('div',{class:'row',style:'margin-top:10px'},
       h('button',{class:'btn',type:'submit'},isNew?'Request Contract':'Save Wrestler'),
       h('a',{class:'btn alt',href:wOf(id)?'#wrestler-'+id:'#home',onclick:()=>{S.editing=false;}},'Cancel')));
