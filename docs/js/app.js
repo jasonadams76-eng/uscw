@@ -1667,7 +1667,7 @@ function pageEditEvent(id){
         h('div',{class:'f'},h('label',{class:'l'},isMatch?'Match title (optional)':'Segment title'),h('input',{type:'text',value:s.title,placeholder:isMatch?'e.g. USCW Championship':'e.g. Contract signing',oninput:e=>{s.title=e.target.value;}})),
         isMatch?h('div',{class:'f'},h('label',{class:'l'},'Stipulation'),h('input',{type:'text',value:s.stip,placeholder:'e.g. Steel Cage, No DQ, 30-min Iron Man',oninput:e=>{s.stip=e.target.value;}})):null),
       sidesBox,
-      h('div',{class:'f',style:'margin-top:10px'},h('label',{class:'l'},isMatch?'Notes / storyline':'What happens'),h('textarea',{placeholder:isMatch?'Build-up, rivalry, what\'s at stake…':'Describe the in-ring or backstage event…',oninput:e=>{s.desc=e.target.value;}},s.desc)),
+      h('div',{class:'f',style:'margin-top:10px'},h('label',{class:'l'},isMatch?'Notes / storyline':'What happens'),h('textarea',{maxlength:'12000',placeholder:isMatch?'Build-up, rivalry, what\'s at stake…':'Describe the in-ring or backstage event… (up to 12,000 characters, so a long player promo can be pasted whole)',oninput:e=>{s.desc=e.target.value;}},s.desc)),
       isMatch?resultBox:null);
     drawSides();
     if(isIntro) el.replaceChildren(el.firstChild);

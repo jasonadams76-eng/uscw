@@ -917,6 +917,10 @@ const SEG_TYPES = ['show_intro', 'match', 'promo', 'backstage', 'angle', 'ceremo
 // Sound cues the show script may trigger (the audio files themselves are added later).
 const CUE_RE = /^(intro_music|bell|pyro|crowd_pop|crowd_pop_big|crowd_boo|crowd_chant|mat_slam|pin_count|chair_shot|entrance:[A-Za-z0-9_-]{1,40})$/;
 const MAX_BEATS = 120, MAX_BEAT_CHARS = 1200, MAX_SCRIPT_CHARS = 150000;
+// The CEO's "What happens" / notes text for a segment (a pasted player promo can be long).
+const MAX_DESC_CHARS = 12000;
+// Target length for a drafted segment: its minutes, but never shorter than a long brief needs (beats add announcer and action lines).
+const segWords = seg => Math.min(4000, Math.max(seg.length * 200, Math.round(String(seg.desc || '').split(/\s+/).filter(Boolean).length * 1.6)));
 const cleanLength = (v, type) => {
   const n = Math.round(Number(v));
   return Number.isFinite(n) && n >= 1 ? Math.min(30, n) : (type === 'match' ? 6 : type === 'show_intro' ? 4 : 3);
@@ -945,7 +949,7 @@ function cleanEvent(b) {
     return {
       id: typeof s.id === 'string' && ID_RE.test(s.id) ? s.id : randHex(6),
       type: SEG_TYPES.includes(s.type) ? s.type : 'other',
-      title: str(s.title, 100), stip: str(s.stip, 100), desc: str(s.desc, 2000), sides,
+      title: str(s.title, 100), stip: str(s.stip, 100), desc: str(s.desc, MAX_DESC_CHARS), sides,
       length: cleanLength(s.length, SEG_TYPES.includes(s.type) ? s.type : 'other'),
       beats: cleanBeats(s.beats),
       sub: typeof s.sub === 'string' && ID_RE.test(s.sub) ? s.sub : '',
@@ -1342,7 +1346,7 @@ function aiPrompt(b, profiles, nameOf) {
   const show = b.show, seg = b.segment;
   const sideNames = side => side.map(nameOf).join(' & ');
   const sidesTxt = seg.sides.filter(s => s.length).map(sideNames).join(' vs. ');
-  const words = seg.length * 200;
+  const words = segWords(seg);
   const head = [
     `SHOW: ${show.title || 'Monday Night Mayhem'}${show.ple ? ' (premium live event)' : ''}${show.date ? ', ' + show.date : ''}${show.venue || show.city ? ', live from ' + [show.venue, show.city].filter(Boolean).join(', ') : ''}.`,
     show.notes ? `CEO's show notes: ${show.notes}` : '',
@@ -1465,7 +1469,7 @@ async function aiDraft(request, env) {
   const b = {
     kind, tier: raw.tier === 'lite' ? 'lite' : 'main',
     show: { id: ID_RE.test(String(sh.id || '')) ? String(sh.id) : '', title: aiStr(sh.title, 100), date: aiStr(sh.date, 10), venue: aiStr(sh.venue, 100), city: aiStr(sh.city, 100), ple: !!sh.ple, notes: aiStr(sh.notes, 600) },
-    segment: { type, title: aiStr(s.title, 100), stip: aiStr(s.stip, 100), desc: aiStr(s.desc, 2000), length: cleanLength(s.length, type), sides },
+    segment: { type, title: aiStr(s.title, 100), stip: aiStr(s.stip, 100), desc: aiStr(s.desc, MAX_DESC_CHARS), length: cleanLength(s.length, type), sides },
     result: { winner: Number.isInteger(res.winner) && res.winner >= -1 && res.winner < sides.length ? res.winner : -1, finish: aiStr(res.finish, 300) },
     earlier: aiList(raw.earlier, 14, 300), champions: aiList(raw.champions, 6, 200),
     base: (Array.isArray(raw.base) ? raw.base : []).slice(0, 40).map(x => ({ text: aiStr(x && x.text, 1200) })).filter(x => x.text),
@@ -1496,7 +1500,7 @@ async function aiDraft(request, env) {
     if (kind === 'intro') for (const m of b.card.sides) b.card.meet.push(await meetingLines(env, m, b.show.date, b.show.id, nameOf));
   } catch (e) { console.error('meetings failed', e && e.message); }
   const prompt = aiPrompt(b, profiles, nameOf);
-  const words = kind === 'polish' ? Math.max(120, b.baseWords) : b.segment.length * 200;
+  const words = kind === 'polish' ? Math.max(120, b.baseWords) : segWords(b.segment);
   const mainModel = env.GEMINI_MODEL_MAIN || GEMINI_MODEL_MAIN, liteModel = env.GEMINI_MODEL_LITE || GEMINI_MODEL_LITE, backupModel = env.GEMINI_MODEL_FALLBACK || GEMINI_MODEL_FALLBACK;
   // Cheaper calls: lite, then 3.1, then the stronger model. Stronger calls: stronger, then lite, then 3.1.
   const chain = [...new Set(b.tier === 'lite' ? [liteModel, backupModel, mainModel] : [mainModel, liteModel, backupModel])];
