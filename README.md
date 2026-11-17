@@ -318,3 +318,6 @@ The **Staff** menu item (`#staff`) lists everyone in a non-wrestling role: the s
 - The six are created automatically the first time the roster loads (`STAFF` / `ensureStaff` in `worker/src/index.js`, `INSERT OR IGNORE`, ids `staff-jason`, `staff-mike`, ...). They are authority records with `staff: true`, `staffOrder` and `pickable`. The CEO fills in bios, looks and portraits from each profile (Edit). Core staff cannot be released.
 - Only Jason Adams is `pickable`: he can be added to promo, backstage, angle, ceremony and other non-match segments (contract signings, announcements). The AI then gets his profile and may have him speak. The others stay part of the broadcast, are never in the picker, and keep their existing AI voices (their records are for the site only).
 - Default alignment is Face for the CEO (change it on his profile); it drives the crowd reaction when he comes out.
+
+### Winner theme restart fix
+If a draft puts the same `entrance:<wrestler>` cue on two beats in a row (for example the winner's announcement and the next line), the theme now keeps playing instead of fading out and starting over (`sndBeat` in `docs/js/app.js`). A different theme, or the same one after it has stopped, still starts normally.
