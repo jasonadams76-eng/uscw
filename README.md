@@ -321,3 +321,9 @@ The **Staff** menu item (`#staff`) lists everyone in a non-wrestling role: the s
 
 ### Winner theme restart fix
 If a draft puts the same `entrance:<wrestler>` cue on two beats in a row (for example the winner's announcement and the next line), the theme now keeps playing instead of fading out and starting over (`sndBeat` in `docs/js/app.js`). A different theme, or the same one after it has stopped, still starts normally.
+
+## Title belts
+Belt pictures live in `docs/img/belts/` (`world-heavyweight.webp`, `us-heavyweight.webp`, `world-tag.webp`). `BELT_IMG` / `BELT_NAME` in `docs/js/app.js` match a championship by its id (or by name), and a title with no picture keeps the star icon. To add a belt, drop a picture in that folder and add one entry to those two lists.
+- **Championship cards** (home, Superstars, CEO page) show the belt instead of the star.
+- **Champion profile pages** show the belt(s) the wrestler holds under their title tags.
+- **Title matches:** a match whose title or stipulation names a championship (e.g. "World Heavyweight Championship") shows that belt above the match header, on the event page, the CEO run sheet and the live show.

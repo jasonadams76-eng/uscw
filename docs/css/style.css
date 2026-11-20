@@ -345,3 +345,11 @@ nav a.on .badge{box-shadow:0 0 0 2px var(--navy)}
 /* the Mayhem logo is 800 px wide, so it can run larger than the premium live event logos (about 388 px) */
 .banner-logo.mayhem-logo{width:min(480px,100%);aspect-ratio:800/437}
 .intro-logo.mayhem-logo{width:min(480px,90%)}
+
+/* title belts */
+.belt-img{flex:0 0 auto;width:190px;height:auto;border-radius:8px;box-shadow:0 2px 8px rgba(10,26,63,.35)}
+.wp-belts{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 2px}
+.wp-belt-img{height:72px;width:auto;border-radius:6px;box-shadow:0 1px 5px rgba(10,26,63,.35)}
+.seg-belt{display:block;height:88px;width:auto;max-width:100%;border-radius:8px;margin:0 0 10px;box-shadow:0 1px 6px rgba(10,26,63,.35)}
+.w-match .seg-belt{margin:4px auto 10px}
+@media(max-width:600px){.belt-img{width:100%;max-width:300px}}

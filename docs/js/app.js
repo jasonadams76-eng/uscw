@@ -679,6 +679,7 @@ function pageWrestler(id){
         h('div',{class:'wp-tags'},
           isAuth(w)?h('span',{class:'tag navy'},w.title||'Authority figure'):null,
           belts.map(c=>h('span',{class:'tag red'},'★ '+c.name.replace(/ Championship$/,' Champion')))),
+        belts.some(c=>beltFile(c))?h('div',{class:'wp-belts'},belts.map(c=>beltPic(c,'wp-belt-img')).filter(Boolean)):null,
         h('h1',{class:'wp-name'},w.ringName),
         w.nickname?h('div',{class:'wp-nick'},'“'+w.nickname+'”'):null,
         h('div',{class:'stats'},
@@ -983,6 +984,7 @@ function pageEvent(e){
   const all=e.segments||[];
   const segs=all.filter(s=>s.type==='match');
   const segLine=(s,i,isMain,hidden)=>h('div',{class:'seg '+s.type},
+      s.type==='match'?beltPic(beltForSeg(s),'seg-belt'):null,
       s.type==='match'?matchHeader(s.sides):null,
       h('div',{class:'seg-h'},
         h('span',{class:'tag '+(s.type==='match'?'navy':'')},SEG_TYPES[s.type]||'Segment'),
@@ -1201,7 +1203,9 @@ function pageWatch(id){
       const k=1/speed, play=!!animate&&!reduceMotion&&sg.type==='match'&&sides.length>0;
       const mh=sg.type==='match'?matchHeader(sg.sides,play?{k}:null,true):null;
       const late=(el)=>{ if(play&&el){ el.classList.add('w-late'); el.style.animationDelay=((mh._cards*CARD_GAP+0.45)*k).toFixed(2)+'s'; el.style.setProperty('--k',k); } return el; };
+      const bp=sg.type==='match'?beltForSeg(sg):null;
       feed.append(h('div',{class:'w-seg w-match'},
+        bp?beltPic(bp,'seg-belt'):null,
         mh,
         late(h('span',{class:'tag '+(sg.type==='match'?'red':'navy')},SEG_TYPES[sg.type]||'Segment')),
         late(sg.title?h('div',{class:'cond w-title'},sg.title):null),
@@ -1951,6 +1955,18 @@ function pageEditEvent(id){
 
 /* ----- champions ----- */
 function champsOf(id){ return S.champs.filter(c=>c.holders.includes(id)); }
+// Belt pictures, found by title id (or by name). A title with no picture keeps the star.
+const BELT_IMG={'world-heavyweight':'world-heavyweight','us-heavyweight':'us-heavyweight','world-tag':'world-tag'};
+const BELT_NAME=[['worldheavyweight','world-heavyweight'],['unitedstatesheavyweight','us-heavyweight'],['worldtagteam','world-tag']];
+const flat=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+function beltFile(c){ if(!c) return ''; if(BELT_IMG[c.id]) return BELT_IMG[c.id]; const n=flat(c.name); const hit=BELT_NAME.find(([k])=>n.includes(k)); return hit?hit[1]:''; }
+function beltPic(c,cls){ const f=beltFile(c); return f?h('img',{class:cls,src:'img/belts/'+f+'.webp?v='+(window.USCW_VERSION||''),alt:c.name,title:c.name,loading:'lazy'}):null; }
+// The belt for a match whose title or stipulation names a championship, e.g. "World Heavyweight Championship match".
+function beltForSeg(sg){
+  const t=flat((sg.title||'')+' '+(sg.stip||'')); if(!t) return null;
+  const c=(S.champs||[]).find(c=>{ const k=flat(c.name).replace(/championship$/,'').replace(/title$/,''); return k.length>=8&&t.includes(k); });
+  return c&&beltFile(c)?c:null;
+}
 function champCard(c,readOnly){
   const holders=c.holders.filter(id=>S.wrestlers[id]);
   const names = holders.length
@@ -1959,7 +1975,7 @@ function champCard(c,readOnly){
   const meta=[c.since?'Champion since '+fmtDate(c.since).replace(/^\w+, /,''):'', c.wonAt?'Won at '+c.wonAt:''].filter(Boolean).join(' · ');
   const pics=holders.filter(id=>S.wrestlers[id].image);
   return h('div',{class:'champ'},
-    h('div',{class:'belt','aria-hidden':'true'},'★'),
+    beltPic(c,'belt-img')||h('div',{class:'belt','aria-hidden':'true'},'★'),
     pics.length?h('div',{class:'champ-pics'},pics.map(id=>{
       const pic=h('a',{href:'#wrestler-'+id,class:'champ-pic',title:S.wrestlers[id].ringName});
       pic.style.backgroundImage='url("'+String(S.wrestlers[id].image).replace(/"/g,'%22')+'")'; return pic;
