@@ -145,11 +145,14 @@ function pageHome(){
   if (champs.length) wrap.append(h('div',{class:'sect'},
     h('div',{class:'sect-h'},h('h2',{},'Reigning Champions'),h('div',{class:'sp'}),h('a',{href:'#superstars',class:'cond'},'All titles →')),
     champs.map(c=>champCard(c,true))));
-  const ws=wrestlersOnly().map(([id,w])=>({id,...w}));
+  // The biggest stars first (by the CEO's level), then reigning champions, then by name. One row of four.
+  const held=new Set(S.champs.flatMap(c=>c.holders));
+  const ws=wrestlersOnly().map(([id,w])=>({id,...w}))
+    .sort((a,b)=>(b.order??1.5)-(a.order??1.5)||(held.has(b.id)-held.has(a.id))||a.ringName.localeCompare(b.ringName));
   if (ws.length){
     wrap.append(h('div',{class:'sect'},
       h('div',{class:'sect-h'},h('h2',{},'Superstars'),h('div',{class:'sp'}),h('a',{href:'#superstars',class:'cond'},'All superstars →')),
-      h('div',{class:'tiles'}, ws.slice(0,6).map(superTile))));
+      h('div',{class:'tiles tiles-row'}, ws.slice(0,4).map((w,i)=>superTile(w,i%2===0?'cR':'cB')))));
   }
   return wrap;
 }

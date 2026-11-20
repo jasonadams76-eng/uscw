@@ -418,12 +418,14 @@ async function tierMap(env) {
   try {
     await ensureStory(env);
     const { results } = await env.DB.prepare('SELECT id, data FROM wrestler_story').all();
-    for (const r of results || []) { try { if (JSON.parse(r.data).level === 'jobber') m[r.id] = 'Development'; } catch (_) { /* ignore */ } }
+    for (const r of results || []) { try { const lv = JSON.parse(r.data).level; m[r.id] = { tier: lv === 'jobber' ? 'Development' : 'Main Roster', rank: lv in LEVEL_RANK ? LEVEL_RANK[lv] : 1.5 }; } catch (_) { /* ignore */ } }
   } catch (_) { /* no story data yet: everyone is Main Roster */ }
   return m;
 }
 const wrestlerOut = (r, user, tiers = {}) => {
-  const w = { id: r.id, ownerId: r.owner_id, ...JSON.parse(r.data), tier: tiers[r.id] || 'Main Roster' };
+  const t = tiers[r.id] || {};
+  // `order` is only a sort number for the home page (biggest stars first); the level itself stays private.
+  const w = { id: r.id, ownerId: r.owner_id, ...JSON.parse(r.data), tier: t.tier || 'Main Roster', order: typeof t.rank === 'number' ? t.rank : 1.5 };
   if (w.role === 'authority') w.tier = 'Management';
   const full = user && (user.isAdmin || user.id === r.id || user.id === r.owner_id);
   if (!full) { w.realName = ''; w.moves = {}; w.appearance = {}; w.style = ''; w.personality = ''; if (w.finisher) w.finisher = { name: w.finisher.name || '' }; }   // the finisher description, style and appearance are only for the AI

@@ -327,3 +327,6 @@ Belt pictures live in `docs/img/belts/` (`world-heavyweight.webp`, `us-heavyweig
 - **Championship cards** (home, Superstars, CEO page) show the belt instead of the star.
 - **Champion profile pages** show the belt(s) the wrestler holds under their title tags.
 - **Title matches:** a match whose title or stipulation names a championship (e.g. "World Heavyweight Championship") shows that belt above the match header, on the event page, the CEO run sheet and the live show.
+
+### Home page Superstars
+The home page shows one row of four superstars, the biggest first: by the CEO's level (star, then mid, lower, jobber; no level set counts between lower and mid), then reigning champions, then by name. The Worker adds a sort number `order` to each wrestler for this (the level itself stays private). Everyone else is under **All superstars**. On phones the four tiles fall back to a 2×2 grid.

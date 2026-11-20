@@ -353,3 +353,8 @@ nav a.on .badge{box-shadow:0 0 0 2px var(--navy)}
 .seg-belt{display:block;height:88px;width:auto;max-width:100%;border-radius:8px;margin:0 0 10px;box-shadow:0 1px 6px rgba(10,26,63,.35)}
 .w-match .seg-belt{margin:4px auto 10px}
 @media(max-width:600px){.belt-img{width:100%;max-width:300px}}
+
+/* home page: one row of four superstars */
+.tiles.tiles-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.tiles.tiles-row .tile{width:auto;min-width:0}
+@media(max-width:560px){.tiles.tiles-row{grid-template-columns:repeat(2,1fr)}}
