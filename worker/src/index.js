@@ -1342,6 +1342,7 @@ VOICES (keep them identical in every segment):
 - Mike Johnson is the lead play-by-play announcer: professional, precise, technical and serious. He names moves correctly, tries to stay impartial, wants every match fairly contested so the best man wins, and gets exasperated with Earl.
 - Earl Backwater is the color commentator: a shameless heel sympathizer. He cheers the villains, can't stand the fan favorites, makes excuses for cheating and constantly argues with Mike about which wrestlers he likes and dislikes. He never hesitates to make his feelings known; his words sometimes get him into hot water with the wrestlers, but nothing stops him from voicing his opinions.
 - Mike and Earl are the only commentators; the cast above never does commentary.
+- NO BREAK COUNTS: never write a referee's count (1 2 3 4, or counting to five) for a rope break, an illegal move or a choke. Describe the action in words instead; only a pinfall uses a count beat, and it never goes past 3.
 - MANAGEMENT: when the show details list authority figures (a General Manager, Commissioner and so on), they are real USCW characters. Have one speak or act only when the CEO's brief names them or they are listed as involved in this segment; they never do commentary. Mike and Earl may mention one by name and title in passing when it fits, never inventing what they have decided. An authority figure is not a competitor: never put one in a match, never give one a win or a loss.
 - Never invent an interviewer, host or questioner for a promo or interview. Use Paul Sandler or Jackie O'Sullivan only when the CEO's brief or the player's text names one or clearly has someone asking questions; otherwise the wrestler simply speaks on their own.
 
@@ -1498,7 +1499,7 @@ Write every PIN ATTEMPT as exactly three beats in a row:
  2. a COUNT BEAT whose text is ONLY the numbers and nothing else: write 1 2 for a kickout. The show page draws and times it (one second per number), so never add dots, words or punctuation to a count beat, and use no cue or pause on it.
  3. the kickout beat, shown right after the 2, for example: Mike Johnson: “NO! Paco gets the shoulder up at the last possible moment!” with Earl reacting (he complains about the count when his favorite is the one covering, or cheers when a favorite he dislikes is almost beaten).
 The final pinfall is the same, except its count beat is 1 2 3 and the next beat is the bell and Cindy's announcement. Never let a count beat reach 3 unless that pin ends the match.
-SUBMISSION FINISHERS: if a wrestler's finisher is a submission hold (judge by its name and description), and he is set to lose, he locks it in at least once during the match and his opponent escapes, counters it, or reaches the ropes. For a rope break use a count beat of 1 2 3 4 (the ref counting to four), then the ref breaking the hold and the crowd reacting. If he is set to win by that submission, the earlier attempts fail the same way, and the final one makes the opponent tap out or pass out with no count beat.
+SUBMISSION FINISHERS: if a wrestler's finisher is a submission hold (judge by its name and description), and he is set to lose, he locks it in at least once during the match and his opponent escapes, counters it, or reaches the ropes. For a rope break do NOT use a count beat: never write 1 2 3 4 or any referee count to four or five for a break, an illegal move or a choke. Just describe the action in words: the hand reaching the rope, the ref forcing the break, the crowd reacting. If he is set to win by that submission, the earlier attempts fail the same way, and the final one makes the opponent tap out or pass out with no count beat.
 After the finish, Cindy Maxwell announces the winner (and any title change).
 ${seg.desc ? `CEO notes / story for this match: ${seg.desc}` : ''}`;
   } else {
@@ -1675,7 +1676,7 @@ async function aiDraft(request, env) {
     const cue = typeof x.cue === 'string' ? x.cue.trim() : '';
     const good = AI_CUES.includes(cue) || (cue.startsWith('entrance:') && ok.has(cue.slice(9)));
     return { text: aiAction(stripCommercial(x.text)), pause: Math.min(6, Number(x.pause) || 0), cue: good ? cue : '' };
-  }));
+  }).filter(b => !/^[\s.,]*\d[\d\s.,]*$/.test(b.text) || !/[45]/.test(b.text)));   // a number-only beat reaching 4 or 5 is a rope-break count, never a pin: drop it (a pin count stops at 3)
   if (!out.length) throw new HttpError(502, 'Gemini’s reply was empty. Please try again.');
   // The bell must sound on the beat that says it rings, not on the build-up before it.
   out.forEach((x, i) => {
